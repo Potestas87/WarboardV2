@@ -363,3 +363,17 @@ kbd {
   background: #2a2200; border-color: #ffd700; color: #ffd700;
   box-shadow: 0 0 6px rgba(255, 215, 0, 0.4);
 }
+
+/* ── Site footer ────────────────────────────────────────────────────────────── */
+.site-footer {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  text-align: center;
+  padding: 7px 16px;
+  font-size: 0.70rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  letter-spacing: 0.04em;
+  z-index: 5;
+}
+.site-footer strong { color: var(--text); }

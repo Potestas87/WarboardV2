@@ -192,6 +192,39 @@ def health():
     return {'status': 'ok'}, 200
 
 
+# ── SEO: robots.txt & sitemap ──────────────────────────────────────────────────
+
+@app.route('/robots.txt')
+def robots_txt():
+    host = request.host_url.rstrip('/')
+    content = f"""User-agent: *
+Allow: /
+Disallow: /game/
+Disallow: /lobby
+Disallow: /admin/
+
+Sitemap: {host}/sitemap.xml
+"""
+    from flask import Response
+    return Response(content, mimetype='text/plain')
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    from flask import Response
+    host = request.host_url.rstrip('/')
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>{host}/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
+"""
+    return Response(content, mimetype='application/xml')
+
+
 # ── SocketIO helpers ──────────────────────────────────────────────────────────
 
 def _get_session_username():
@@ -559,4 +592,5 @@ if __name__ == '__main__':
     database.init_db()
     port       = int(os.environ.get('PORT', 5001))
     debug_mode = os.environ.get('DEBUG', 'true').lower() == 'true'
-    socketio.run(app, debug=debug_mode, port=port)
+    socketio.run(app, debug=debug_mode, port=port,
+                 allow_unsafe_werkzeug=debug_mode)  # safe: only enabled when debug=True

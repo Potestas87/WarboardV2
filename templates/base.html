@@ -3,10 +3,65 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Warboard V2{% block title_suffix %}{% endblock %}</title>
+
+  <!-- ── Title ──────────────────────────────────────────────────────────── -->
+  <title>{% block page_title %}Warboard V2 — Online Tabletop Simulator{% endblock %}{% block title_suffix %}{% endblock %}</title>
+
+  <!-- ── Core SEO ───────────────────────────────────────────────────────── -->
+  <meta name="description"
+        content="{% block meta_description %}Warboard V2 is a free online tabletop war game simulator. Create sessions, place units, measure distances, and battle opponents in real time on a fully scaled virtual board.{% endblock %}" />
+  <meta name="keywords"
+        content="tabletop simulator, wargame, miniature war game, online board game, turn-based strategy, virtual tabletop, warhammer simulator, warboard, ventrysis" />
+  <meta name="author" content="Ventrysis" />
+  <meta name="robots" content="{% block robots %}index, follow{% endblock %}" />
+  <link rel="canonical" href="{{ request.base_url }}" />
+
+  <!-- ── Open Graph (social sharing) ───────────────────────────────────── -->
+  <meta property="og:type"        content="website" />
+  <meta property="og:site_name"   content="Warboard V2" />
+  <meta property="og:title"       content="{% block og_title %}Warboard V2 — Online Tabletop Simulator{% endblock %}" />
+  <meta property="og:description" content="{% block og_description %}Free online tabletop war game simulator. Play scaled, turn-based miniature battles with friends in real time.{% endblock %}" />
+  <meta property="og:url"         content="{{ request.base_url }}" />
+
+  <!-- ── Twitter Card ───────────────────────────────────────────────────── -->
+  <meta name="twitter:card"        content="summary" />
+  <meta name="twitter:title"       content="Warboard V2 — Online Tabletop Simulator" />
+  <meta name="twitter:description" content="Free online tabletop war game simulator by Ventrysis." />
+
+  <!-- ── Structured data (Google rich results) ──────────────────────────── -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Warboard V2",
+    "url": "{{ request.host_url }}",
+    "description": "Online tabletop miniature war game simulator. Two-player, real-time, fully scaled virtual board.",
+    "applicationCategory": "GameApplication",
+    "operatingSystem": "Any",
+    "browserRequirements": "Requires a modern web browser with JavaScript enabled.",
+    "inLanguage": "en",
+    "isAccessibleForFree": true,
+    "author": {
+      "@type": "Organization",
+      "name": "Ventrysis"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 <body>
   {% block content %}{% endblock %}
+
+  {% block footer %}
+  <footer class="site-footer">
+    <p>Warboard V2 is the intellectual property of <strong>Ventrysis</strong>. All rights reserved.</p>
+  </footer>
+  {% endblock %}
 </body>
 </html>
