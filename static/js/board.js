@@ -4,27 +4,27 @@
 // SESSION_ID, USERNAME, BOARD_W_MM, BOARD_H_MM are globals from the template.
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let circles   = [];          // [{id, x_mm, y_mm, radius_mm, title, color}, ...]
-let zoom      = 1.0;         // current zoom multiplier
-let panX      = 0;           // canvas-px offset of board origin X
-let panY      = 0;           // canvas-px offset of board origin Y
-let baseScale = 1;           // px-per-mm at zoom=1 (recalculated on resize)
+let circles   = [];   // [{id, x_mm, y_mm, radius_mm, title, color, hp?}, ...]
+let zoom      = 1.0;
+let panX      = 0;
+let panY      = 0;
+let baseScale = 1;    // px-per-mm at zoom=1
 
 let selectedColor = '#e94560';
 
 // Interaction state
-let dragCircle   = null;     // circle being moved
-let dragOffX     = 0;        // cursor offset inside circle (mm)
+let dragCircle   = null;
+let dragOffX     = 0;
 let dragOffY     = 0;
-let isPanning    = false;    // board pan in progress
+let isPanning    = false;
 let panStartX    = 0;
 let panStartY    = 0;
 let panStartPanX = 0;
 let panStartPanY = 0;
 
-let ctxMenuCircle = null;    // circle targeted by right-click menu
+let ctxMenuCircle = null;
 
-// ── DOM refs ─────────────────────────────────────────────────────────────────
+// ── DOM refs ──────────────────────────────────────────────────────────────────
 const canvas     = document.getElementById('board-canvas');
 const ctx        = canvas.getContext('2d');
 const zoomLabel  = document.getElementById('zoom-label');
@@ -57,6 +57,12 @@ socket.on('circle_moved', (data) => {
 
 socket.on('circle_deleted', (data) => {
   circles = circles.filter(c => c.id !== data.circle_id);
+  render();
+});
+
+socket.on('hp_updated', (data) => {
+  const c = circles.find(c => c.id === data.circle_id);
+  if (c !== undefined) c.hp = data.hp;
   render();
 });
 
@@ -96,33 +102,22 @@ function initPan() {
 // ── Coordinate helpers ────────────────────────────────────────────────────────
 function totalScale() { return baseScale * zoom; }
 
-// board-mm → canvas-px
-function mmToCanvas(x_mm, y_mm) {
-  const s = totalScale();
-  return { x: x_mm * s + panX, y: y_mm * s + panY };
-}
-
-// canvas-px → board-mm
 function canvasToMm(px, py) {
   const s = totalScale();
   return { x: (px - panX) / s, y: (py - panY) / s };
 }
 
-// mm distance → px distance (for radii etc.)
-function mmToPx(mm) { return mm * totalScale(); }
-
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Outer background
   ctx.fillStyle = '#0d1117';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
   ctx.translate(panX, panY);
   ctx.scale(totalScale(), totalScale());
-  // Now 1 canvas unit = 1 mm
+  // 1 canvas unit = 1 mm from here on
 
   drawBoard();
   circles.forEach(drawCircle);
@@ -131,7 +126,6 @@ function render() {
 }
 
 function drawBoard() {
-  // Board surface
   ctx.fillStyle = '#1a2e22';
   ctx.fillRect(0, 0, BOARD_W_MM, BOARD_H_MM);
 
@@ -155,7 +149,7 @@ function drawBoard() {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(BOARD_W_MM, y); ctx.stroke();
   }
 
-  // Ruler marks — inch numbers along edges
+  // Ruler marks along edges
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.font = '6px monospace';
   ctx.textAlign = 'center';
@@ -177,56 +171,95 @@ function drawBoard() {
 
 function drawCircle(c) {
   const { x_mm, y_mm, radius_mm, title, color } = c;
+  const hasHP = c.hp !== undefined;
 
   ctx.save();
   ctx.translate(x_mm, y_mm);
 
-  // Fill — semi-transparent
+  // Fill
   ctx.beginPath();
   ctx.arc(0, 0, radius_mm, 0, Math.PI * 2);
   ctx.fillStyle = color + '55';
   ctx.fill();
 
-  // Stroke
+  // Outer ring
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(radius_mm * 0.04, 0.5);
   ctx.stroke();
 
-  // Title text — scales with circle
-  const fontSize = Math.max(radius_mm * 0.28, 3);
-  ctx.font = `${fontSize}px monospace`;
+  // Clip all text/buttons to just inside the ring
+  ctx.beginPath();
+  ctx.arc(0, 0, radius_mm * 0.9, 0, Math.PI * 2);
+  ctx.clip();
+
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Wrap long titles
-  const maxW = radius_mm * 1.6;
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(0, 0, radius_mm * 0.92, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.fillText(title, 0, 0, maxW);
-  ctx.restore();
+  if (hasHP) {
+    // Title — smaller, sits in upper area
+    const titleSize = Math.max(radius_mm * 0.22, 2.5);
+    ctx.font = `${titleSize}px monospace`;
+    ctx.fillText(title, 0, -radius_mm * 0.28, radius_mm * 1.7);
+
+    // HP number — large, centre
+    const hpSize = Math.max(radius_mm * 0.32, 3.5);
+    ctx.font = `bold ${hpSize}px monospace`;
+    ctx.fillText(String(c.hp), 0, radius_mm * 0.12);
+
+    // Button constants (local coords)
+    const btnR  = radius_mm * 0.17;
+    const btnY  = radius_mm * 0.60;
+    const btnX  = radius_mm * 0.33;
+    const btnFS = Math.max(btnR * 1.5, 2);
+
+    // [−] button
+    ctx.beginPath();
+    ctx.arc(-btnX, btnY, btnR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(radius_mm * 0.025, 0.25);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${btnFS}px monospace`;
+    ctx.fillText('−', -btnX, btnY);
+
+    // [+] button
+    ctx.beginPath();
+    ctx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(radius_mm * 0.025, 0.25);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('+', btnX, btnY);
+
+  } else {
+    // No HP — just title centred
+    const fontSize = Math.max(radius_mm * 0.28, 3);
+    ctx.font = `${fontSize}px monospace`;
+    ctx.fillText(title, 0, 0, radius_mm * 1.7);
+  }
 
   ctx.restore();
 }
 
 // ── Zoom ──────────────────────────────────────────────────────────────────────
 function zoomAt(px, py, factor) {
-  const mm = canvasToMm(px, py);   // mm point under cursor before zoom
-
+  const mm = canvasToMm(px, py);
   zoom = Math.max(0.15, Math.min(12, zoom * factor));
-
-  // Reposition pan so that same mm point stays under cursor
   const s = totalScale();
   panX = px - mm.x * s;
   panY = py - mm.y * s;
-
   zoomLabel.textContent = Math.round(zoom * 100) + '%';
   render();
 }
 
-// ── Hit test ──────────────────────────────────────────────────────────────────
+// ── Hit tests ─────────────────────────────────────────────────────────────────
+
+// Returns the topmost circle under a board-mm point, or null.
 function circleAt(mm_x, mm_y) {
   for (let i = circles.length - 1; i >= 0; i--) {
     const c  = circles[i];
@@ -237,17 +270,55 @@ function circleAt(mm_x, mm_y) {
   return null;
 }
 
+// Returns {circle, action:'plus'|'minus'} if an HP button is hit, or null.
+// Must match the button positions in drawCircle exactly.
+function hpButtonAt(mm_x, mm_y) {
+  for (let i = circles.length - 1; i >= 0; i--) {
+    const c = circles[i];
+    if (c.hp === undefined) continue;
+
+    const r    = c.radius_mm;
+    const btnR = r * 0.17;
+    const btnY = r * 0.60;
+    const btnX = r * 0.33;
+
+    // Translate click to circle-local coords
+    const dx = mm_x - c.x_mm;
+    const dy = mm_y - c.y_mm;
+
+    // [−] at local (-btnX, btnY)
+    if ((dx + btnX) ** 2 + (dy - btnY) ** 2 <= btnR ** 2) {
+      return { circle: c, action: 'minus' };
+    }
+    // [+] at local (+btnX, btnY)
+    if ((dx - btnX) ** 2 + (dy - btnY) ** 2 <= btnR ** 2) {
+      return { circle: c, action: 'plus' };
+    }
+  }
+  return null;
+}
+
 // ── Mouse events ──────────────────────────────────────────────────────────────
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 2) return;  // handled by contextmenu
+  if (e.button === 2) return;
   hideCtxMenu();
 
   const rect = canvas.getBoundingClientRect();
   const px   = e.clientX - rect.left;
   const py   = e.clientY - rect.top;
   const mm   = canvasToMm(px, py);
-  const hit  = circleAt(mm.x, mm.y);
 
+  // HP buttons take priority over drag
+  const btn = hpButtonAt(mm.x, mm.y);
+  if (btn) {
+    const { circle, action } = btn;
+    circle.hp = action === 'minus' ? Math.max(0, circle.hp - 1) : circle.hp + 1;
+    socket.emit('update_hp', { session_id: SESSION_ID, circle_id: circle.id, hp: circle.hp });
+    render();
+    return;
+  }
+
+  const hit = circleAt(mm.x, mm.y);
   if (hit) {
     dragCircle = hit;
     dragOffX   = mm.x - hit.x_mm;
@@ -270,13 +341,11 @@ canvas.addEventListener('mousemove', (e) => {
 
   if (dragCircle) {
     const mm = canvasToMm(px, py);
-    // Clamp within board bounds
     dragCircle.x_mm = Math.max(dragCircle.radius_mm,
                        Math.min(BOARD_W_MM - dragCircle.radius_mm, mm.x - dragOffX));
     dragCircle.y_mm = Math.max(dragCircle.radius_mm,
                        Math.min(BOARD_H_MM - dragCircle.radius_mm, mm.y - dragOffY));
     render();
-
   } else if (isPanning) {
     panX = panStartPanX + (e.clientX - panStartX);
     panY = panStartPanY + (e.clientY - panStartY);
@@ -284,9 +353,8 @@ canvas.addEventListener('mousemove', (e) => {
   }
 });
 
-canvas.addEventListener('mouseup', (e) => {
+canvas.addEventListener('mouseup', () => {
   if (dragCircle) {
-    // Persist final position
     socket.emit('move_circle', {
       session_id: SESSION_ID,
       circle_id:  dragCircle.id,
@@ -350,13 +418,9 @@ ctxDelete.addEventListener('click', () => {
 });
 
 document.addEventListener('click', hideCtxMenu);
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hideCtxMenu();
-});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtxMenu(); });
 
-function hideCtxMenu() {
-  ctxMenu.classList.add('hidden');
-}
+function hideCtxMenu() { ctxMenu.classList.add('hidden'); }
 
 // ── Dice roller ───────────────────────────────────────────────────────────────
 document.getElementById('btn-roll').addEventListener('click', () => {
@@ -366,7 +430,7 @@ document.getElementById('btn-roll').addEventListener('click', () => {
 
 function showDiceResults(data) {
   const { counts, total, num_dice } = data;
-  const tbody   = document.getElementById('dice-tbody');
+  const tbody    = document.getElementById('dice-tbody');
   const maxCount = Math.max(...Object.values(counts), 1);
 
   tbody.innerHTML = '';
@@ -374,11 +438,6 @@ function showDiceResults(data) {
     const count = counts[String(face)] || 0;
     const pct   = Math.round((count / maxCount) * 100);
     const tr    = document.createElement('tr');
-    tr.innerHTML = `
-      <td>&#9856;${'&#9856;&#9857;&#9858;&#9859;&#9860;&#9861;'.split('').slice(0)[face-1] || face}</td>
-      <td>${count}</td>
-      <td class="bar-cell"><div class="bar-inner" style="width:${pct}%"></div></td>`;
-    // Simpler: just use the number with a die face label
     tr.innerHTML = `
       <td style="color:var(--muted)">${face}</td>
       <td><strong>${count}</strong></td>
@@ -388,12 +447,10 @@ function showDiceResults(data) {
 
   document.getElementById('dice-total').textContent =
     `${num_dice} dice · total ${total} · avg ${(total / num_dice).toFixed(1)}`;
-
   document.getElementById('dice-results').classList.remove('hidden');
 }
 
 // ── Circle creator ────────────────────────────────────────────────────────────
-// Color swatch selection
 document.getElementById('color-swatches').addEventListener('click', (e) => {
   if (!e.target.classList.contains('swatch')) return;
   document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
@@ -401,27 +458,39 @@ document.getElementById('color-swatches').addEventListener('click', (e) => {
   selectedColor = e.target.dataset.color;
 });
 
+// Show/hide HP input based on checkbox
+document.getElementById('circle-hp-enabled').addEventListener('change', (e) => {
+  document.getElementById('circle-hp-row').classList.toggle('hidden', !e.target.checked);
+});
+
 document.getElementById('btn-add-circle').addEventListener('click', () => {
-  const radius = parseFloat(document.getElementById('circle-radius').value) || 25;
-  const title  = document.getElementById('circle-title').value.trim() || 'Unit';
-  const copies = Math.max(1, Math.min(50, parseInt(document.getElementById('circle-copies').value, 10) || 1));
+  // Input is diameter; radius_mm = diameter / 2
+  const diameter  = parseFloat(document.getElementById('circle-radius').value) || 40;
+  const radius_mm = diameter / 2;
+  const title     = document.getElementById('circle-title').value.trim() || 'Unit';
+  const copies    = Math.max(1, Math.min(50, parseInt(document.getElementById('circle-copies').value, 10) || 1));
+  const hpEnabled = document.getElementById('circle-hp-enabled').checked;
+  const hpStart   = hpEnabled
+    ? Math.max(1, parseInt(document.getElementById('circle-hp').value, 10) || 1)
+    : undefined;
 
   const newCircles = [];
-  const spacing    = radius * 2 + 5;   // small gap between copies
+  const spacing    = diameter + 5;   // one diameter + small gap between copies
 
   for (let i = 0; i < copies; i++) {
-    // Place copies in a row starting near top-left with a small offset per copy
-    const x = Math.min(radius + 20 + i * spacing, BOARD_W_MM - radius);
-    const y = radius + 20;
+    const x = Math.min(radius_mm + 10 + i * spacing, BOARD_W_MM - radius_mm);
+    const y = radius_mm + 10;
 
-    newCircles.push({
+    const circle = {
       id:        crypto.randomUUID(),
       x_mm:      x,
       y_mm:      y,
-      radius_mm: radius,
+      radius_mm,
       title:     copies > 1 ? `${title} ${i + 1}` : title,
       color:     selectedColor,
-    });
+    };
+    if (hpEnabled) circle.hp = hpStart;
+    newCircles.push(circle);
   }
 
   circles.push(...newCircles);
@@ -436,8 +505,6 @@ document.getElementById('btn-save').addEventListener('click', () => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('resize', resizeCanvas);
-
-// First render
 resizeCanvas();
 recalcBaseScale();
 initPan();

@@ -154,7 +154,7 @@ def on_add_circles(data):
     state['circles'].extend(new_circles)
     database.save_game_state(sid, state)
 
-    emit('circles_added', {'circles': new_circles}, room=sid)
+    emit('circles_added', {'circles': new_circles}, room=sid, include_self=False)
 
 
 @socketio.on('move_circle')
@@ -198,6 +198,23 @@ def on_roll_dice(data):
     emit('dice_result',
          {'counts': counts, 'total': sum(results), 'num_dice': num_dice},
          room=sid)
+
+
+@socketio.on('update_hp')
+def on_update_hp(data):
+    sid       = data['session_id']
+    circle_id = data['circle_id']
+    hp        = max(0, int(data['hp']))
+
+    state = database.get_game_state(sid)
+    for c in state['circles']:
+        if c['id'] == circle_id:
+            c['hp'] = hp
+            break
+    database.save_game_state(sid, state)
+
+    emit('hp_updated', {'circle_id': circle_id, 'hp': hp},
+         room=sid, include_self=False)
 
 
 @socketio.on('save_state')

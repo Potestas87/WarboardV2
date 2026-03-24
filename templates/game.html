@@ -55,8 +55,8 @@
       <section class="panel">
         <h3>Add Circles</h3>
         <div class="field-row">
-          <label>Radius (mm)</label>
-          <input id="circle-radius" type="number" min="1" max="500" value="25" />
+          <label>Base Diameter (mm)</label>
+          <input id="circle-radius" type="number" min="1" max="1000" value="40" />
         </div>
         <div class="field-row">
           <label>Title</label>
@@ -78,6 +78,16 @@
             <span class="swatch" data-color="#00bcd4" style="background:#00bcd4"></span>
             <span class="swatch" data-color="#ffffff" style="background:#ffffff"></span>
           </div>
+        </div>
+        <div class="field-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="circle-hp-enabled" />
+            <span>Multiple HP Tracker</span>
+          </label>
+        </div>
+        <div id="circle-hp-row" class="field-row hidden">
+          <label>Starting HP</label>
+          <input id="circle-hp" type="number" min="1" max="9999" value="10" step="1" />
         </div>
         <button id="btn-add-circle" class="btn btn-primary w-full">Place on Board</button>
       </section>
