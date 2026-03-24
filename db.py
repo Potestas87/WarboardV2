@@ -113,8 +113,12 @@ def get_game_state(session_id):
         state = json.loads(row['state_json'])
         if 'circles' not in state:
             state['circles'] = []
+        if 'squares' not in state:
+            state['squares'] = []
+        if 'phase' not in state:
+            state['phase'] = 'setup'
         return state
-    return {'circles': []}
+    return {'circles': [], 'squares': [], 'phase': 'setup'}
 
 
 def save_game_state(session_id, state):

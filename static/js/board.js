@@ -5,6 +5,8 @@
 
 // ── Board state ───────────────────────────────────────────────────────────────
 let circles   = [];
+let squares   = [];
+let gamePhase = 'setup';   // 'setup' | 'active'
 let zoom      = 1.0;
 let panX      = 0;
 let panY      = 0;
@@ -23,6 +25,10 @@ let dragOffX     = 0;
 let dragOffY     = 0;
 let dragStartX   = 0;      // circle position at the moment of mousedown
 let dragStartY   = 0;
+
+let dragSquare      = null;
+let dragSquareOffX  = 0;
+let dragSquareOffY  = 0;
 let isPanning    = false;
 let panStartX    = 0;
 let panStartY    = 0;
@@ -35,6 +41,7 @@ let measureOriginX = 0;
 let measureOriginY = 0;
 
 let ctxMenuCircle = null;
+let ctxMenuSquare = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const canvas        = document.getElementById('board-canvas');
@@ -57,8 +64,11 @@ socket.on('connect', () => {
 
 socket.on('state_sync', (state) => {
   circles    = state.circles || [];
+  squares    = state.squares || [];
+  gamePhase  = state.phase   || 'setup';
   activeTurn = state.active_turn || null;
   updateTurnUI();
+  updatePhaseUI();
   render();
 });
 
@@ -89,6 +99,28 @@ socket.on('turn_changed', (data) => {
   moveHistory = [];
   redoStack   = [];
   updateTurnUI();
+  render();
+});
+
+socket.on('squares_added', (data) => {
+  squares.push(...data.squares);
+  render();
+});
+
+socket.on('square_moved', (data) => {
+  const s = squares.find(s => s.id === data.square_id);
+  if (s) { s.x_mm = data.x_mm; s.y_mm = data.y_mm; }
+  render();
+});
+
+socket.on('square_deleted', (data) => {
+  squares = squares.filter(s => s.id !== data.square_id);
+  render();
+});
+
+socket.on('game_started', () => {
+  gamePhase = 'active';
+  updatePhaseUI();
   render();
 });
 
@@ -124,6 +156,26 @@ function updateTurnUI() {
   btnEndTurn.disabled = !isMyTurn() || !PLAYER2_NAME;
 
   updateUndoRedoButtons();
+}
+
+// ── Phase UI ──────────────────────────────────────────────────────────────────
+function updatePhaseUI() {
+  const isSetup = gamePhase === 'setup';
+
+  // Terrain panel — only visible in setup
+  const terrainPanel = document.getElementById('terrain-panel');
+  if (terrainPanel) terrainPanel.classList.toggle('hidden', !isSetup);
+
+  // Start Game button — only player1 can see it, only in setup
+  const btnStart = document.getElementById('btn-start-game');
+  if (btnStart) btnStart.classList.toggle('hidden', !isSetup || USERNAME !== PLAYER1_NAME);
+
+  // Phase badge
+  const badge = document.getElementById('phase-indicator');
+  if (badge) {
+    badge.textContent = isSetup ? 'Setup' : 'Active';
+    badge.className   = isSetup ? 'phase-indicator setup' : 'phase-indicator active';
+  }
 }
 
 // ── Undo / Redo ───────────────────────────────────────────────────────────────
@@ -210,6 +262,7 @@ function render() {
   ctx.scale(totalScale(), totalScale());
 
   drawBoard();
+  squares.forEach(drawSquare);
   drawMeasureRing();
   circles.forEach(drawCircle);
 
@@ -315,6 +368,53 @@ function drawCircle(c) {
   ctx.restore();
 }
 
+function drawSquare(s) {
+  const { x_mm, y_mm, width_mm, height_mm, name, elevation } = s;
+  const hw = width_mm / 2, hh = height_mm / 2;
+  const minSide = Math.min(width_mm, height_mm);
+
+  ctx.save();
+  ctx.translate(x_mm, y_mm);
+
+  // Fill
+  ctx.fillStyle = 'rgba(90, 65, 40, 0.60)';
+  ctx.fillRect(-hw, -hh, width_mm, height_mm);
+
+  // Outer border
+  ctx.strokeStyle = '#c8a070';
+  ctx.lineWidth = Math.max(minSide * 0.018, 0.5);
+  ctx.strokeRect(-hw, -hh, width_mm, height_mm);
+
+  // Inner inset line
+  const m = Math.max(minSide * 0.045, 1);
+  ctx.strokeStyle = 'rgba(200, 160, 112, 0.35)';
+  ctx.lineWidth = Math.max(minSide * 0.009, 0.3);
+  ctx.strokeRect(-hw + m, -hh + m, width_mm - m * 2, height_mm - m * 2);
+
+  // Text
+  ctx.fillStyle = '#ffe8c0';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const hasElev = elevation !== undefined && elevation !== null && elevation !== '';
+  if (hasElev) {
+    const nameSize = Math.max(minSide * 0.16, 3);
+    ctx.font = `${nameSize}px monospace`;
+    ctx.fillText(name, 0, -hh * 0.30, width_mm * 0.88);
+
+    const elvSize = Math.max(minSide * 0.26, 4);
+    ctx.font = `bold ${elvSize}px monospace`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(String(elevation), 0, hh * 0.28);
+  } else {
+    const nameSize = Math.max(minSide * 0.18, 3);
+    ctx.font = `${nameSize}px monospace`;
+    ctx.fillText(name, 0, 0, width_mm * 0.88);
+  }
+
+  ctx.restore();
+}
+
 // ── Measure ring ──────────────────────────────────────────────────────────────
 function getMeasureInches() {
   return parseFloat(document.getElementById('measure-input').value) || 0;
@@ -384,6 +484,17 @@ function hpButtonAt(mm_x, mm_y) {
   return null;
 }
 
+function squareAt(mm_x, mm_y) {
+  for (let i = squares.length - 1; i >= 0; i--) {
+    const s = squares[i];
+    if (mm_x >= s.x_mm - s.width_mm / 2 && mm_x <= s.x_mm + s.width_mm / 2 &&
+        mm_y >= s.y_mm - s.height_mm / 2 && mm_y <= s.y_mm + s.height_mm / 2) {
+      return s;
+    }
+  }
+  return null;
+}
+
 // ── Mouse events ──────────────────────────────────────────────────────────────
 canvas.addEventListener('mousedown', (e) => {
   if (e.button === 2) return;
@@ -407,22 +518,35 @@ canvas.addEventListener('mousedown', (e) => {
     dragCircle     = hit;
     dragOffX       = mm.x - hit.x_mm;
     dragOffY       = mm.y - hit.y_mm;
-    dragStartX     = hit.x_mm;      // snapshot for undo
+    dragStartX     = hit.x_mm;
     dragStartY     = hit.y_mm;
     selectedCircle = hit;
     measureOriginX = hit.x_mm;
     measureOriginY = hit.y_mm;
     canvas.style.cursor = 'grabbing';
     render();
-  } else {
-    selectedCircle = null;
-    isPanning    = true;
-    panStartX    = e.clientX;
-    panStartY    = e.clientY;
-    panStartPanX = panX;
-    panStartPanY = panY;
-    canvas.style.cursor = 'grabbing';
+    return;
   }
+
+  // Square drag — setup phase only
+  if (gamePhase === 'setup') {
+    const sqHit = squareAt(mm.x, mm.y);
+    if (sqHit) {
+      dragSquare     = sqHit;
+      dragSquareOffX = mm.x - sqHit.x_mm;
+      dragSquareOffY = mm.y - sqHit.y_mm;
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+  }
+
+  selectedCircle = null;
+  isPanning    = true;
+  panStartX    = e.clientX;
+  panStartY    = e.clientY;
+  panStartPanX = panX;
+  panStartPanY = panY;
+  canvas.style.cursor = 'grabbing';
 });
 
 canvas.addEventListener('mousemove', (e) => {
@@ -434,6 +558,11 @@ canvas.addEventListener('mousemove', (e) => {
                        Math.min(BOARD_W_MM - dragCircle.radius_mm, mm.x - dragOffX));
     dragCircle.y_mm = Math.max(dragCircle.radius_mm,
                        Math.min(BOARD_H_MM - dragCircle.radius_mm, mm.y - dragOffY));
+    render();
+  } else if (dragSquare) {
+    const hw = dragSquare.width_mm / 2, hh = dragSquare.height_mm / 2;
+    dragSquare.x_mm = Math.max(hw, Math.min(BOARD_W_MM - hw, mm.x - dragSquareOffX));
+    dragSquare.y_mm = Math.max(hh, Math.min(BOARD_H_MM - hh, mm.y - dragSquareOffY));
     render();
   } else if (isPanning) {
     panX = panStartPanX + (e.clientX - panStartX);
@@ -454,7 +583,6 @@ canvas.addEventListener('mouseup', () => {
       y_mm:       movedY,
     });
 
-    // Record for undo only when it's our turn and we own the circle
     // TODO: remove Guest bypass before production
     const eligibleToRecord = (isMyTurn() || USERNAME === 'Guest') &&
                              (dragCircle.created_by === USERNAME || USERNAME === 'Guest');
@@ -463,6 +591,16 @@ canvas.addEventListener('mouseup', () => {
     }
 
     dragCircle = null;
+  }
+
+  if (dragSquare) {
+    socket.emit('move_square', {
+      session_id: SESSION_ID,
+      square_id:  dragSquare.id,
+      x_mm:       dragSquare.x_mm,
+      y_mm:       dragSquare.y_mm,
+    });
+    dragSquare = null;
   }
 
   selectedCircle = null;
@@ -479,7 +617,6 @@ canvas.addEventListener('mouseleave', () => {
       x_mm:       dragCircle.x_mm,
       y_mm:       dragCircle.y_mm,
     });
-    // Also record move on leave if eligible
     // TODO: remove Guest bypass before production
     const didMove2 = dragCircle.x_mm !== dragStartX || dragCircle.y_mm !== dragStartY;
     const eligible2 = (isMyTurn() || USERNAME === 'Guest') &&
@@ -489,6 +626,17 @@ canvas.addEventListener('mouseleave', () => {
     }
     dragCircle = null;
   }
+
+  if (dragSquare) {
+    socket.emit('move_square', {
+      session_id: SESSION_ID,
+      square_id:  dragSquare.id,
+      x_mm:       dragSquare.x_mm,
+      y_mm:       dragSquare.y_mm,
+    });
+    dragSquare = null;
+  }
+
   selectedCircle = null;
   isPanning = false;
   canvas.style.cursor = 'grab';
@@ -507,21 +655,43 @@ canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const rect = canvas.getBoundingClientRect();
   const mm   = canvasToMm(e.clientX - rect.left, e.clientY - rect.top);
-  const hit  = circleAt(mm.x, mm.y);
+
+  const hit = circleAt(mm.x, mm.y);
   if (hit) {
     ctxMenuCircle = hit;
+    ctxMenuSquare = null;
+    ctxDelete.textContent = 'Delete Circle';
     ctxMenu.style.left = e.clientX + 'px';
     ctxMenu.style.top  = e.clientY + 'px';
     ctxMenu.classList.remove('hidden');
+    return;
+  }
+
+  if (gamePhase === 'setup') {
+    const sqHit = squareAt(mm.x, mm.y);
+    if (sqHit) {
+      ctxMenuSquare = sqHit;
+      ctxMenuCircle = null;
+      ctxDelete.textContent = 'Delete Terrain';
+      ctxMenu.style.left = e.clientX + 'px';
+      ctxMenu.style.top  = e.clientY + 'px';
+      ctxMenu.classList.remove('hidden');
+    }
   }
 });
 
 ctxDelete.addEventListener('click', () => {
-  if (!ctxMenuCircle) return;
-  const id = ctxMenuCircle.id;
-  circles = circles.filter(c => c.id !== id);
-  socket.emit('delete_circle', { session_id: SESSION_ID, circle_id: id });
-  ctxMenuCircle = null;
+  if (ctxMenuCircle) {
+    const id = ctxMenuCircle.id;
+    circles = circles.filter(c => c.id !== id);
+    socket.emit('delete_circle', { session_id: SESSION_ID, circle_id: id });
+    ctxMenuCircle = null;
+  } else if (ctxMenuSquare) {
+    const id = ctxMenuSquare.id;
+    squares = squares.filter(s => s.id !== id);
+    socket.emit('delete_square', { session_id: SESSION_ID, square_id: id });
+    ctxMenuSquare = null;
+  }
   hideCtxMenu();
   render();
 });
@@ -600,6 +770,38 @@ document.getElementById('btn-add-circle').addEventListener('click', () => {
   render();
 });
 
+// ── Terrain creator ───────────────────────────────────────────────────────────
+document.getElementById('btn-add-square').addEventListener('click', () => {
+  const widthIn   = parseFloat(document.getElementById('sq-width').value)     || 4;
+  const heightIn  = parseFloat(document.getElementById('sq-height').value)    || 4;
+  const elevation = parseInt(document.getElementById('sq-elevation').value, 10);
+  const name      = document.getElementById('sq-name').value.trim() || 'Terrain';
+
+  const width_mm  = widthIn  * 25.4;
+  const height_mm = heightIn * 25.4;
+
+  const sq = {
+    id:         crypto.randomUUID(),
+    x_mm:       width_mm  / 2 + 10,
+    y_mm:       height_mm / 2 + 10,
+    width_mm,
+    height_mm,
+    name,
+    elevation:  isNaN(elevation) ? 0 : elevation,
+    created_by: USERNAME,
+  };
+
+  squares.push(sq);
+  socket.emit('add_squares', { session_id: SESSION_ID, squares: [sq] });
+  render();
+});
+
+// ── Start Game ────────────────────────────────────────────────────────────────
+document.getElementById('btn-start-game').addEventListener('click', () => {
+  if (USERNAME !== PLAYER1_NAME) return;
+  socket.emit('start_game', { session_id: SESSION_ID });
+});
+
 // ── Measure clear ─────────────────────────────────────────────────────────────
 document.getElementById('measure-clear').addEventListener('click', () => {
   document.getElementById('measure-input').value = '';
@@ -617,4 +819,5 @@ resizeCanvas();
 recalcBaseScale();
 initPan();
 zoomLabel.textContent = '100%';
+updatePhaseUI();
 render();

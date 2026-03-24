@@ -259,6 +259,52 @@ def on_update_hp(data):
          room=sid, include_self=False)
 
 
+@socketio.on('add_squares')
+def on_add_squares(data):
+    sid         = data['session_id']
+    new_squares = data['squares']
+    state = database.get_game_state(sid)
+    state['squares'].extend(new_squares)
+    database.save_game_state(sid, state)
+    emit('squares_added', {'squares': new_squares}, room=sid, include_self=False)
+
+
+@socketio.on('move_square')
+def on_move_square(data):
+    sid       = data['session_id']
+    square_id = data['square_id']
+    x_mm      = data['x_mm']
+    y_mm      = data['y_mm']
+    state = database.get_game_state(sid)
+    for s in state.get('squares', []):
+        if s['id'] == square_id:
+            s['x_mm'] = x_mm
+            s['y_mm'] = y_mm
+            break
+    database.save_game_state(sid, state)
+    emit('square_moved', {'square_id': square_id, 'x_mm': x_mm, 'y_mm': y_mm},
+         room=sid, include_self=False)
+
+
+@socketio.on('delete_square')
+def on_delete_square(data):
+    sid       = data['session_id']
+    square_id = data['square_id']
+    state = database.get_game_state(sid)
+    state['squares'] = [s for s in state.get('squares', []) if s['id'] != square_id]
+    database.save_game_state(sid, state)
+    emit('square_deleted', {'square_id': square_id}, room=sid)
+
+
+@socketio.on('start_game')
+def on_start_game(data):
+    sid = data['session_id']
+    state = database.get_game_state(sid)
+    state['phase'] = 'active'
+    database.save_game_state(sid, state)
+    emit('game_started', {}, room=sid)
+
+
 @socketio.on('save_state')
 def on_save_state(data):
     sid   = data['session_id']

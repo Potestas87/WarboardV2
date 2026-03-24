@@ -295,3 +295,18 @@ kbd {
 .lock-badge {
   font-size: 0.75rem; margin-right: 4px; opacity: 0.8;
 }
+
+/* ── Phase indicator ────────────────────────────────────────────────────────── */
+.phase-indicator {
+  font-size: 0.75rem; padding: 2px 8px;
+  border-radius: var(--radius); white-space: nowrap; letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.phase-indicator.setup  { color: #ffd700; border: 1px solid #ffd700; }
+.phase-indicator.active { color: var(--accent); border: 1px solid var(--accent); }
+
+/* ── Start Game button ──────────────────────────────────────────────────────── */
+.btn-start-game {
+  background: #3a2800; border-color: #ffd700; color: #ffd700;
+}
+.btn-start-game:hover { background: #5a3e00; }
