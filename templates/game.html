@@ -92,6 +92,19 @@
         <button id="btn-add-circle" class="btn btn-primary w-full">Place on Board</button>
       </section>
 
+      <!-- Measure tool -->
+      <section class="panel">
+        <h3>Measure</h3>
+        <div class="field-row">
+          <label>Range (inches)</label>
+          <div class="measure-row">
+            <input id="measure-input" type="number" min="0" max="144" step="0.5" />
+            <button id="measure-clear" class="btn btn-ghost btn-sm">Clear</button>
+          </div>
+        </div>
+        <p class="measure-hint">Hold a circle to preview its range ring.</p>
+      </section>
+
       <!-- Controls reference -->
       <section class="panel panel-sm">
         <h3>Controls</h3>

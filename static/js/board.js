@@ -24,6 +24,11 @@ let panStartPanY = 0;
 
 let ctxMenuCircle = null;
 
+// Measure tool state
+let selectedCircle  = null;   // circle actively held (mousedown)
+let measureOriginX  = 0;      // board-mm position at the moment of selection
+let measureOriginY  = 0;
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const canvas     = document.getElementById('board-canvas');
 const ctx        = canvas.getContext('2d');
@@ -120,6 +125,7 @@ function render() {
   // 1 canvas unit = 1 mm from here on
 
   drawBoard();
+  drawMeasureRing();        // drawn before circles so it sits beneath them
   circles.forEach(drawCircle);
 
   ctx.restore();
@@ -246,6 +252,45 @@ function drawCircle(c) {
   ctx.restore();
 }
 
+// ── Measure ring ──────────────────────────────────────────────────────────────
+function getMeasureInches() {
+  return parseFloat(document.getElementById('measure-input').value) || 0;
+}
+
+function drawMeasureRing() {
+  if (!selectedCircle) return;
+  const inches = getMeasureInches();
+  if (inches <= 0) return;
+
+  const radius_mm = inches * 25.4;   // inches as radius → radius in mm
+
+  ctx.save();
+  ctx.translate(measureOriginX, measureOriginY);
+
+  // Transparent filled area
+  ctx.beginPath();
+  ctx.arc(0, 0, radius_mm, 0, Math.PI * 2);
+  ctx.fillStyle = selectedCircle.color + '20';
+  ctx.fill();
+
+  // Dashed border
+  ctx.strokeStyle = selectedCircle.color + 'aa';
+  ctx.lineWidth   = Math.max(radius_mm * 0.008, 0.4);
+  ctx.setLineDash([radius_mm * 0.025, radius_mm * 0.015]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Inch label at the right edge of the ring
+  const labelSize = Math.max(radius_mm * 0.04, 3);
+  ctx.font        = `${labelSize}px monospace`;
+  ctx.fillStyle   = selectedCircle.color + 'cc';
+  ctx.textAlign   = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${inches}"`, radius_mm + labelSize * 0.3, 0);
+
+  ctx.restore();
+}
+
 // ── Zoom ──────────────────────────────────────────────────────────────────────
 function zoomAt(px, py, factor) {
   const mm = canvasToMm(px, py);
@@ -320,11 +365,17 @@ canvas.addEventListener('mousedown', (e) => {
 
   const hit = circleAt(mm.x, mm.y);
   if (hit) {
-    dragCircle = hit;
-    dragOffX   = mm.x - hit.x_mm;
-    dragOffY   = mm.y - hit.y_mm;
+    dragCircle     = hit;
+    dragOffX       = mm.x - hit.x_mm;
+    dragOffY       = mm.y - hit.y_mm;
+    // Capture selection origin for measure ring — frozen at this position
+    selectedCircle = hit;
+    measureOriginX = hit.x_mm;
+    measureOriginY = hit.y_mm;
     canvas.style.cursor = 'grabbing';
+    render();   // show ring immediately on mousedown, before any movement
   } else {
+    selectedCircle = null;   // clicking empty space clears selection
     isPanning    = true;
     panStartX    = e.clientX;
     panStartY    = e.clientY;
@@ -363,8 +414,10 @@ canvas.addEventListener('mouseup', () => {
     });
     dragCircle = null;
   }
+  selectedCircle = null;   // release clears measure ring
   isPanning = false;
   canvas.style.cursor = 'grab';
+  render();
 });
 
 canvas.addEventListener('mouseleave', () => {
@@ -377,8 +430,10 @@ canvas.addEventListener('mouseleave', () => {
     });
     dragCircle = null;
   }
+  selectedCircle = null;
   isPanning = false;
   canvas.style.cursor = 'grab';
+  render();
 });
 
 canvas.addEventListener('wheel', (e) => {
@@ -495,6 +550,12 @@ document.getElementById('btn-add-circle').addEventListener('click', () => {
 
   circles.push(...newCircles);
   socket.emit('add_circles', { session_id: SESSION_ID, circles: newCircles });
+  render();
+});
+
+// ── Measure clear button ──────────────────────────────────────────────────────
+document.getElementById('measure-clear').addEventListener('click', () => {
+  document.getElementById('measure-input').value = '';
   render();
 });
 
