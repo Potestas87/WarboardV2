@@ -264,6 +264,7 @@ function render() {
   drawBoard();
   squares.forEach(drawSquare);
   drawMeasureRing();
+  drawLosHighlights();
   circles.forEach(drawCircle);
 
   ctx.restore();
@@ -413,6 +414,70 @@ function drawSquare(s) {
   }
 
   ctx.restore();
+}
+
+// ── Line-of-sight helpers ─────────────────────────────────────────────────────
+
+// Returns true if segment (x1,y1)→(x2,y2) crosses segment (x3,y3)→(x4,y4)
+function segmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+  const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(denom) < 1e-10) return false;
+  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+// Returns true if segment (x1,y1)→(x2,y2) intersects axis-aligned rect
+// (rx, ry) is top-left corner, rw/rh are dimensions
+function segmentIntersectsRect(x1, y1, x2, y2, rx, ry, rw, rh) {
+  const inRect = (px, py) => px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
+  if (inRect(x1, y1) || inRect(x2, y2)) return true;
+  const l = rx, r = rx + rw, t = ry, b = ry + rh;
+  return segmentsIntersect(x1, y1, x2, y2, l, t, l, b) ||
+         segmentsIntersect(x1, y1, x2, y2, r, t, r, b) ||
+         segmentsIntersect(x1, y1, x2, y2, l, t, r, t) ||
+         segmentsIntersect(x1, y1, x2, y2, l, b, r, b);
+}
+
+// Draws green/red highlight rings around circles that fall within the measure
+// ring of the selected circle. Green = clear line of sight; red = blocked by terrain.
+function drawLosHighlights() {
+  if (!selectedCircle) return;
+  const measureIn = getMeasureInches();
+  if (measureIn <= 0) return;
+
+  const measureRadius = measureIn * 25.4;   // measure ring radius in mm
+  const sx = measureOriginX, sy = measureOriginY;
+
+  for (const c of circles) {
+    if (c.id === selectedCircle.id) continue;
+
+    const dx   = c.x_mm - sx, dy = c.y_mm - sy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // Only highlight circles whose area overlaps the measure ring area
+    if (dist > measureRadius + c.radius_mm) continue;
+
+    // Check if any terrain square blocks the direct line between centers
+    const blocked = squares.some(s =>
+      segmentIntersectsRect(
+        sx, sy, c.x_mm, c.y_mm,
+        s.x_mm - s.width_mm  / 2,
+        s.y_mm - s.height_mm / 2,
+        s.width_mm,
+        s.height_mm
+      )
+    );
+
+    ctx.save();
+    ctx.translate(c.x_mm, c.y_mm);
+    ctx.beginPath();
+    ctx.arc(0, 0, c.radius_mm + Math.max(c.radius_mm * 0.14, 1.5), 0, Math.PI * 2);
+    ctx.strokeStyle = blocked ? 'rgba(233, 69, 96, 0.90)' : 'rgba(76, 175, 80, 0.90)';
+    ctx.lineWidth   = Math.max(c.radius_mm * 0.09, 1);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // ── Measure ring ──────────────────────────────────────────────────────────────
