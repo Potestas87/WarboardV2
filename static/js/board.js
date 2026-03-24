@@ -446,7 +446,7 @@ function drawLosHighlights() {
   const measureIn = getMeasureInches();
   if (measureIn <= 0) return;
 
-  const measureRadius = measureIn * 25.4;   // measure ring radius in mm
+  const measureRadius = measureIn * 25.4 + selectedCircle.radius_mm;   // measure ring radius in mm
   const sx = measureOriginX, sy = measureOriginY;
 
   for (const c of circles) {
@@ -490,7 +490,7 @@ function drawMeasureRing() {
   const inches = getMeasureInches();
   if (inches <= 0) return;
 
-  const radius_mm = inches * 25.4;
+  const radius_mm = inches * 25.4 + selectedCircle.radius_mm;
 
   ctx.save();
   ctx.translate(measureOriginX, measureOriginY);
