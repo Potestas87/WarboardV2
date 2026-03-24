@@ -277,3 +277,21 @@ kbd {
 .divider::after  { right: 0; }
 
 .hidden { display: none !important; }
+
+/* ── Lobby create form ──────────────────────────────────────────────────────── */
+.create-form { display: flex; flex-direction: column; gap: 0; }
+.create-form .btn { align-self: flex-start; margin-top: 4px; }
+
+.lobby-type-toggle { display: flex; gap: 18px; margin-top: 4px; }
+
+.radio-label {
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; color: var(--text); font-size: 0.82rem; letter-spacing: 0;
+}
+.radio-label input[type="radio"] {
+  width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer;
+}
+
+.lock-badge {
+  font-size: 0.75rem; margin-right: 4px; opacity: 0.8;
+}

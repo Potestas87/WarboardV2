@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Enter Password{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <h1 class="logo">WARBOARD <span>V2</span></h1>
+    <p class="tagline">&#128274; Password-Locked Session</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">{{ messages[0] }}</div>
+      {% endif %}
+    {% endwith %}
+
+    <p style="margin: 18px 0 4px; color: var(--muted); font-size: 0.82rem;">
+      Session: <span style="color: var(--text);">{{ game_session.name }}</span>
+    </p>
+    <p style="margin-bottom: 18px; color: var(--muted); font-size: 0.82rem;">
+      Host: <span style="color: var(--text);">{{ game_session.player1_name }}</span>
+    </p>
+
+    <form method="POST" class="auth-form">
+      <label>Session Password</label>
+      <input type="password" name="password" required autocomplete="off"
+             placeholder="Enter password..." autofocus />
+      <button type="submit" class="btn btn-primary w-full">Join Session</button>
+    </form>
+
+    <div style="margin-top: 14px;">
+      <a href="{{ url_for('lobby') }}" class="btn btn-ghost w-full">&#8592; Back to Lobby</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

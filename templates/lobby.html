@@ -17,8 +17,33 @@
     <!-- Create session -->
     <section class="panel">
       <h2>New Game</h2>
-      <form method="POST" action="{{ url_for('create_session_route') }}" class="inline-form">
-        <input type="text" name="name" placeholder="Session name..." maxlength="60" required />
+      <form method="POST" action="{{ url_for('create_session_route') }}" class="create-form">
+        <div class="field-row">
+          <label>Session Name</label>
+          <input type="text" name="name" placeholder="Session name..." maxlength="60" required />
+        </div>
+
+        <div class="field-row">
+          <label>Lobby Type</label>
+          <div class="lobby-type-toggle">
+            <label class="radio-label">
+              <input type="radio" name="lobby_type" value="open" checked
+                     onchange="togglePasswordField(this.value)" />
+              Open
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="lobby_type" value="locked"
+                     onchange="togglePasswordField(this.value)" />
+              Password-locked
+            </label>
+          </div>
+        </div>
+
+        <div class="field-row hidden" id="password-field">
+          <label>Session Password</label>
+          <input type="password" name="password" placeholder="Set a password..." maxlength="64" />
+        </div>
+
         <button type="submit" class="btn btn-primary">Create</button>
       </form>
     </section>
@@ -40,13 +65,26 @@
           <tbody>
             {% for s in sessions %}
             <tr>
-              <td>{{ s.name }}</td>
+              <td>
+                {% if s.lobby_type == 'locked' %}
+                  <span class="lock-badge">&#128274;</span>
+                {% endif %}
+                {{ s.name }}
+              </td>
               <td>{{ s.player1_name or '—' }}</td>
               <td>{{ s.player2_name or '<span class="open">open</span>' | safe }}</td>
               <td class="muted">{{ s.last_saved[:16].replace('T',' ') }}</td>
               <td>
-                <a href="{{ url_for('join_session', session_id=s.id) }}"
-                   class="btn btn-primary btn-sm">Join</a>
+                {% if s.player1_name == username or s.player2_name == username %}
+                  <a href="{{ url_for('join_session', session_id=s.id) }}"
+                     class="btn btn-ghost btn-sm">Rejoin</a>
+                {% elif s.lobby_type == 'locked' %}
+                  <a href="{{ url_for('join_locked', session_id=s.id) }}"
+                     class="btn btn-ghost btn-sm">Enter Password</a>
+                {% else %}
+                  <a href="{{ url_for('join_session', session_id=s.id) }}"
+                     class="btn btn-primary btn-sm">Join</a>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
@@ -66,4 +104,12 @@
   {% endwith %}
 
 </div>
+
+<script>
+function togglePasswordField(val) {
+  document.getElementById('password-field').classList.toggle('hidden', val !== 'locked');
+  const pwInput = document.querySelector('#password-field input');
+  pwInput.required = (val === 'locked');
+}
+</script>
 {% endblock %}

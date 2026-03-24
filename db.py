@@ -31,6 +31,8 @@ def init_db():
             name         TEXT NOT NULL,
             player1_name TEXT,
             player2_name TEXT,
+            lobby_type   TEXT DEFAULT 'open',
+            password     TEXT,
             created_at   TEXT DEFAULT (datetime('now')),
             last_saved   TEXT DEFAULT (datetime('now'))
         );
@@ -41,6 +43,14 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now'))
         );
     ''')
+
+    # Add lobby_type/password columns to existing DBs that predate step 2
+    try:
+        conn.execute('SELECT lobby_type FROM game_sessions LIMIT 1')
+    except Exception:
+        conn.execute("ALTER TABLE game_sessions ADD COLUMN lobby_type TEXT DEFAULT 'open'")
+        conn.execute('ALTER TABLE game_sessions ADD COLUMN password TEXT')
+
     conn.commit()
     conn.close()
 
@@ -56,12 +66,12 @@ def get_sessions():
     return [dict(r) for r in rows]
 
 
-def create_session(name, player1_name):
+def create_session(name, player1_name, lobby_type='open', password=None):
     sess_id = str(uuid.uuid4())
     conn = get_db()
     conn.execute(
-        'INSERT INTO game_sessions (id, name, player1_name) VALUES (?, ?, ?)',
-        (sess_id, name, player1_name)
+        'INSERT INTO game_sessions (id, name, player1_name, lobby_type, password) VALUES (?, ?, ?, ?, ?)',
+        (sess_id, name, player1_name, lobby_type, password)
     )
     conn.execute(
         'INSERT INTO game_state (session_id, state_json) VALUES (?, ?)',

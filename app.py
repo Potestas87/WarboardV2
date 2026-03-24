@@ -52,16 +52,28 @@ def logout():
 def lobby():
     if 'username' not in session:
         return redirect(url_for('login'))
-    sessions = database.get_sessions()
-    return render_template('lobby.html', sessions=sessions, username=session['username'])
+    uname = session['username']
+    all_sessions = database.get_sessions()
+    # Show sessions that have an open slot, or where the user is already a player
+    sessions = [
+        s for s in all_sessions
+        if s['player2_name'] is None
+        or s['player1_name'] == uname
+        or s['player2_name'] == uname
+    ]
+    return render_template('lobby.html', sessions=sessions, username=uname)
 
 
 @app.route('/create_session', methods=['POST'])
 def create_session_route():
     if 'username' not in session:
         return redirect(url_for('login'))
-    name    = request.form.get('name', 'New Game').strip() or 'New Game'
-    sess_id = database.create_session(name, session['username'])
+    name        = request.form.get('name', 'New Game').strip() or 'New Game'
+    lobby_type  = request.form.get('lobby_type', 'open')
+    password    = request.form.get('password', '').strip() or None
+    if lobby_type != 'locked':
+        password = None
+    sess_id = database.create_session(name, session['username'], lobby_type, password)
     return redirect(url_for('game', session_id=sess_id))
 
 
@@ -76,17 +88,44 @@ def join_session(session_id):
         return redirect(url_for('lobby'))
 
     uname = session['username']
-    # Already in session
+    # Already in session — go straight in
     if gs['player1_name'] == uname or gs['player2_name'] == uname:
         return redirect(url_for('game', session_id=session_id))
 
-    # Join as player 2 if slot is open
-    if gs['player2_name'] is None:
-        database.add_player_to_session(session_id, uname)
+    if gs['player2_name'] is not None:
+        flash('Session is full (2 players max).')
+        return redirect(url_for('lobby'))
+
+    # Open slot available
+    if gs['lobby_type'] == 'locked':
+        return redirect(url_for('join_locked', session_id=session_id))
+
+    database.add_player_to_session(session_id, uname)
+    return redirect(url_for('game', session_id=session_id))
+
+
+@app.route('/join_locked/<session_id>', methods=['GET', 'POST'])
+def join_locked(session_id):
+    if 'username' not in session:
+        return redirect(url_for('login'))
+
+    gs = database.get_session(session_id)
+    if not gs:
+        flash('Session not found.')
+        return redirect(url_for('lobby'))
+
+    uname = session['username']
+    if gs['player1_name'] == uname or gs['player2_name'] == uname:
         return redirect(url_for('game', session_id=session_id))
 
-    flash('Session is full (2 players max).')
-    return redirect(url_for('lobby'))
+    if request.method == 'POST':
+        entered = request.form.get('password', '').strip()
+        if entered == gs['password']:
+            database.add_player_to_session(session_id, uname)
+            return redirect(url_for('game', session_id=session_id))
+        flash('Incorrect password.')
+
+    return render_template('join_locked.html', game_session=gs)
 
 
 # ── Game route ────────────────────────────────────────────────────────────────
