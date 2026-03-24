@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Login{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <h1 class="logo">WARBOARD <span>V2</span></h1>
+    <p class="tagline">Tabletop Simulator</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">{{ messages[0] }}</div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('login') }}" class="auth-form">
+      <label>Username</label>
+      <input type="text" name="username" required autocomplete="username" />
+
+      <label>Password</label>
+      <input type="password" name="password" required autocomplete="current-password" />
+
+      <div class="btn-row">
+        <button type="submit" name="action" value="login" class="btn btn-primary">Login</button>
+        <button type="submit" name="action" value="register" class="btn btn-ghost">Register</button>
+      </div>
+    </form>
+
+    <div class="divider">or</div>
+    <a href="{{ url_for('guest_login') }}" class="btn btn-guest w-full">Quick Test (Guest)</a>
+  </div>
+</div>
+{% endblock %}

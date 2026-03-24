@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Lobby{% endblock %}
+
+{% block content %}
+<div class="lobby-wrap">
+
+  <header class="lobby-header">
+    <h1 class="logo">WARBOARD <span>V2</span></h1>
+    <div class="lobby-user">
+      <span class="tag">{{ username }}</span>
+      <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm">Logout</a>
+    </div>
+  </header>
+
+  <div class="lobby-body">
+
+    <!-- Create session -->
+    <section class="panel">
+      <h2>New Game</h2>
+      <form method="POST" action="{{ url_for('create_session_route') }}" class="inline-form">
+        <input type="text" name="name" placeholder="Session name..." maxlength="60" required />
+        <button type="submit" class="btn btn-primary">Create</button>
+      </form>
+    </section>
+
+    <!-- Session list -->
+    <section class="panel">
+      <h2>Active Sessions</h2>
+      {% if sessions %}
+        <table class="session-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Player 1</th>
+              <th>Player 2</th>
+              <th>Last Saved</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in sessions %}
+            <tr>
+              <td>{{ s.name }}</td>
+              <td>{{ s.player1_name or '—' }}</td>
+              <td>{{ s.player2_name or '<span class="open">open</span>' | safe }}</td>
+              <td class="muted">{{ s.last_saved[:16].replace('T',' ') }}</td>
+              <td>
+                <a href="{{ url_for('join_session', session_id=s.id) }}"
+                   class="btn btn-primary btn-sm">Join</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">No sessions yet. Create one above.</p>
+      {% endif %}
+    </section>
+
+  </div>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash flash-bottom">{{ messages[0] }}</div>
+    {% endif %}
+  {% endwith %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title_suffix %} — {{ game_session.name }}{% endblock %}
+
+{% block content %}
+<div class="game-wrap">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="{{ url_for('lobby') }}" class="btn btn-ghost btn-sm">&#8592; Lobby</a>
+      <span class="session-title">{{ game_session.name }}</span>
+    </div>
+    <div class="topbar-center">
+      <span class="player-tag p1" title="Player 1">
+        {{ game_session.player1_name or '—' }}
+      </span>
+      <span class="vs">vs</span>
+      <span class="player-tag p2" title="Player 2">
+        {{ game_session.player2_name or 'waiting…' }}
+      </span>
+    </div>
+    <div class="topbar-right">
+      <span id="save-status" class="muted"></span>
+      <button id="btn-save" class="btn btn-ghost btn-sm">Save</button>
+      <span class="tag">{{ username }}</span>
+    </div>
+  </header>
+
+  <!-- Main layout -->
+  <div class="game-body">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+
+      <!-- Dice roller -->
+      <section class="panel">
+        <h3>Dice Roller</h3>
+        <div class="field-row">
+          <label>Number of d6</label>
+          <input id="dice-count" type="number" min="1" max="200" value="1" />
+        </div>
+        <button id="btn-roll" class="btn btn-primary w-full">Roll</button>
+        <div id="dice-results" class="dice-results hidden">
+          <table class="dice-table">
+            <thead><tr><th>Face</th><th>Count</th><th></th></tr></thead>
+            <tbody id="dice-tbody"></tbody>
+            <tfoot>
+              <tr><td colspan="3" id="dice-total" class="dice-total"></td></tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      <!-- Circle creator -->
+      <section class="panel">
+        <h3>Add Circles</h3>
+        <div class="field-row">
+          <label>Radius (mm)</label>
+          <input id="circle-radius" type="number" min="1" max="500" value="25" />
+        </div>
+        <div class="field-row">
+          <label>Title</label>
+          <input id="circle-title" type="text" maxlength="30" placeholder="Unit name…" />
+        </div>
+        <div class="field-row">
+          <label>Copies</label>
+          <input id="circle-copies" type="number" min="1" max="50" value="1" />
+        </div>
+        <div class="field-row">
+          <label>Color</label>
+          <div class="color-swatches" id="color-swatches">
+            <span class="swatch selected" data-color="#e94560" style="background:#e94560"></span>
+            <span class="swatch" data-color="#4a90e2" style="background:#4a90e2"></span>
+            <span class="swatch" data-color="#4caf50" style="background:#4caf50"></span>
+            <span class="swatch" data-color="#ffd700" style="background:#ffd700"></span>
+            <span class="swatch" data-color="#9c27b0" style="background:#9c27b0"></span>
+            <span class="swatch" data-color="#ff9800" style="background:#ff9800"></span>
+            <span class="swatch" data-color="#00bcd4" style="background:#00bcd4"></span>
+            <span class="swatch" data-color="#ffffff" style="background:#ffffff"></span>
+          </div>
+        </div>
+        <button id="btn-add-circle" class="btn btn-primary w-full">Place on Board</button>
+      </section>
+
+      <!-- Controls reference -->
+      <section class="panel panel-sm">
+        <h3>Controls</h3>
+        <ul class="controls-list">
+          <li><kbd>Drag</kbd> empty area — pan board</li>
+          <li><kbd>Drag</kbd> circle — move circle</li>
+          <li><kbd>Scroll</kbd> — zoom in / out</li>
+          <li><kbd>Right-click</kbd> circle — delete</li>
+        </ul>
+      </section>
+
+    </aside>
+
+    <!-- Canvas container -->
+    <main class="canvas-container">
+      <canvas id="board-canvas"></canvas>
+      <div id="zoom-label" class="zoom-label">100%</div>
+    </main>
+
+  </div>
+
+</div>
+
+<!-- Context menu -->
+<div id="ctx-menu" class="ctx-menu hidden">
+  <button id="ctx-delete">Delete Circle</button>
+</div>
+
+<!-- Pass server data to JS -->
+<script>
+  const SESSION_ID   = "{{ game_session.id }}";
+  const USERNAME     = "{{ username }}";
+  const BOARD_W_MM   = {{ board_w_mm }};
+  const BOARD_H_MM   = {{ board_h_mm }};
+</script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="{{ url_for('static', filename='js/board.js') }}"></script>
+{% endblock %}
