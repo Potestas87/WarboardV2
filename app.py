@@ -305,6 +305,15 @@ def on_start_game(data):
     emit('game_started', {}, room=sid)
 
 
+@socketio.on('chat_message')
+def on_chat_message(data):
+    sid      = data['session_id']
+    username = data.get('username', 'Unknown')
+    message  = data.get('message', '').strip()[:200]
+    if message:
+        emit('chat_received', {'username': username, 'message': message}, room=sid)
+
+
 @socketio.on('save_state')
 def on_save_state(data):
     sid   = data['session_id']

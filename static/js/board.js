@@ -873,6 +873,57 @@ document.getElementById('measure-clear').addEventListener('click', () => {
   render();
 });
 
+// ── Chat ──────────────────────────────────────────────────────────────────────
+let chatOpen = false;
+
+const chatToggle   = document.getElementById('chat-toggle');
+const chatPanel    = document.getElementById('chat-panel');
+const chatMessages = document.getElementById('chat-messages');
+const chatInput    = document.getElementById('chat-input');
+const chatBadge    = document.getElementById('chat-badge');
+
+chatToggle.addEventListener('click', () => {
+  chatOpen = !chatOpen;
+  chatPanel.classList.toggle('hidden', !chatOpen);
+  if (chatOpen) {
+    chatBadge.classList.add('hidden');
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    chatInput.focus();
+  }
+});
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const msg = chatInput.value.trim();
+  if (!msg) return;
+  socket.emit('chat_message', { session_id: SESSION_ID, username: USERNAME, message: msg });
+  chatInput.value = '';
+});
+
+socket.on('chat_received', (data) => {
+  appendChatMessage(data.username, data.message);
+  if (!chatOpen) chatBadge.classList.remove('hidden');
+});
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function appendChatMessage(username, message) {
+  const color = username === PLAYER1_NAME ? 'var(--p1)'
+              : username === PLAYER2_NAME ? 'var(--p2)'
+              : 'var(--muted)';
+  const isMe = username === USERNAME;
+  const div  = document.createElement('div');
+  div.className = `chat-msg ${isMe ? 'chat-msg-me' : 'chat-msg-them'}`;
+  div.innerHTML =
+    `<span class="chat-name" style="color:${color}">${escapeHtml(username)}</span>` +
+    `<span class="chat-text">${escapeHtml(message)}</span>`;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
 // ── Save ──────────────────────────────────────────────────────────────────────
 document.getElementById('btn-save').addEventListener('click', () => {
   socket.emit('save_state', { session_id: SESSION_ID });
