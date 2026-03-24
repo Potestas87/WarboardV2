@@ -305,6 +305,14 @@ def on_start_game(data):
     emit('game_started', {}, room=sid)
 
 
+@socketio.on('ping_board')
+def on_ping_board(data):
+    sid  = data['session_id']
+    x_mm = data['x_mm']
+    y_mm = data['y_mm']
+    emit('ping_received', {'x_mm': x_mm, 'y_mm': y_mm}, room=sid, include_self=False)
+
+
 @socketio.on('chat_message')
 def on_chat_message(data):
     sid      = data['session_id']

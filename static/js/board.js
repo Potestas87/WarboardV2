@@ -29,6 +29,14 @@ let dragStartY   = 0;
 let dragSquare      = null;
 let dragSquareOffX  = 0;
 let dragSquareOffY  = 0;
+
+// ── Ping state ────────────────────────────────────────────────────────────────
+const PING_DURATION   = 1500;    // ms — 3 pulses × 500 ms each
+const PING_MAX_RADIUS = 12.7;    // mm — 0.5 in radius → 1 in diameter at peak
+
+let pingMode    = false;
+let activePings = [];
+let rafId       = null;
 let isPanning    = false;
 let panStartX    = 0;
 let panStartY    = 0;
@@ -123,6 +131,8 @@ socket.on('game_started', () => {
   updatePhaseUI();
   render();
 });
+
+socket.on('ping_received', (data) => { createPing(data.x_mm, data.y_mm); });
 
 socket.on('dice_result', showDiceResults);
 
@@ -252,7 +262,7 @@ function canvasToMm(px, py) {
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
-function render() {
+function render(now = performance.now()) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#0d1117';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -266,6 +276,7 @@ function render() {
   drawMeasureRing();
   drawLosHighlights();
   circles.forEach(drawCircle);
+  drawPings(now);
 
   ctx.restore();
 }
@@ -414,6 +425,48 @@ function drawSquare(s) {
   }
 
   ctx.restore();
+}
+
+// ── Ping animation ────────────────────────────────────────────────────────────
+function createPing(x_mm, y_mm) {
+  activePings.push({ x_mm, y_mm, startTime: performance.now() });
+  if (rafId === null) rafId = requestAnimationFrame(rafLoop);
+}
+
+function rafLoop(now) {
+  activePings = activePings.filter(p => now - p.startTime < PING_DURATION);
+  render(now);
+  if (activePings.length > 0) {
+    rafId = requestAnimationFrame(rafLoop);
+  } else {
+    rafId = null;
+  }
+}
+
+function drawPings(now) {
+  for (const p of activePings) {
+    const elapsed = now - p.startTime;
+    const t       = (elapsed / PING_DURATION) * 3;   // 0–3 across full duration
+    const pulse   = t % 1;                            // 0–1 within each pulse
+    const scale   = Math.sin(pulse * Math.PI);        // smooth 0 → 1 → 0
+
+    if (scale <= 0.01) continue;
+
+    const radius = scale * PING_MAX_RADIUS;
+
+    ctx.save();
+    ctx.translate(p.x_mm, p.y_mm);
+
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fillStyle   = `rgba(255, 230, 50, ${0.22 * scale})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255, 230, 50, ${0.92 * scale})`;
+    ctx.lineWidth   = Math.max(radius * 0.08, 0.3);
+    ctx.stroke();
+
+    ctx.restore();
+  }
 }
 
 // ── Line-of-sight helpers ─────────────────────────────────────────────────────
@@ -567,6 +620,16 @@ canvas.addEventListener('mousedown', (e) => {
 
   const rect = canvas.getBoundingClientRect();
   const mm   = canvasToMm(e.clientX - rect.left, e.clientY - rect.top);
+
+  // Ping mode: consume click, fire ping, return to normal
+  if (pingMode) {
+    pingMode = false;
+    document.getElementById('btn-ping').classList.remove('btn-ping-active');
+    canvas.style.cursor = 'grab';
+    createPing(mm.x, mm.y);
+    socket.emit('ping_board', { session_id: SESSION_ID, x_mm: mm.x, y_mm: mm.y });
+    return;
+  }
 
   // HP buttons take priority
   const btn = hpButtonAt(mm.x, mm.y);
@@ -762,7 +825,15 @@ ctxDelete.addEventListener('click', () => {
 });
 
 document.addEventListener('click', hideCtxMenu);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtxMenu(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  hideCtxMenu();
+  if (pingMode) {
+    pingMode = false;
+    document.getElementById('btn-ping').classList.remove('btn-ping-active');
+    canvas.style.cursor = 'grab';
+  }
+});
 function hideCtxMenu() { ctxMenu.classList.add('hidden'); }
 
 // ── Dice roller ───────────────────────────────────────────────────────────────
@@ -865,6 +936,13 @@ document.getElementById('btn-add-square').addEventListener('click', () => {
 document.getElementById('btn-start-game').addEventListener('click', () => {
   if (USERNAME !== PLAYER1_NAME) return;
   socket.emit('start_game', { session_id: SESSION_ID });
+});
+
+// ── Ping button ───────────────────────────────────────────────────────────────
+document.getElementById('btn-ping').addEventListener('click', () => {
+  pingMode = !pingMode;
+  document.getElementById('btn-ping').classList.toggle('btn-ping-active', pingMode);
+  canvas.style.cursor = pingMode ? 'crosshair' : 'grab';
 });
 
 // ── Measure clear ─────────────────────────────────────────────────────────────

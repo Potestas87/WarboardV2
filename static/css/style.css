@@ -357,3 +357,9 @@ kbd {
 
 .chat-input-row { padding: 8px 10px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .chat-input-row input { width: 100%; }
+
+/* ── Ping button ────────────────────────────────────────────────────────────── */
+.btn-ping-active {
+  background: #2a2200; border-color: #ffd700; color: #ffd700;
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.4);
+}
