@@ -168,23 +168,27 @@ def save_game_state(session_id, state):
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
-def cleanup_old_sessions(days=7):
-    """Delete sessions that haven't been active in `days` days. Returns count deleted."""
+def cleanup_old_sessions(hours=48, days=None):
+    """Delete sessions inactive for more than `hours` hours (or `days` days). Returns count deleted."""
     try:
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        if days is not None:
+            delta = timedelta(days=days)
+        else:
+            delta = timedelta(hours=hours)
+        cutoff = (datetime.now() - delta).isoformat()
         conn = get_db()
         cur = conn.execute(
             'DELETE FROM game_sessions WHERE last_saved < ?', (cutoff,)
         )
-        # Orphaned game_state rows are cleaned by the FK cascade; SQLite requires
-        # PRAGMA foreign_keys = ON for that — do a manual clean as a fallback.
+        # Clean up orphaned game_state rows (no FK cascade in SQLite by default)
         conn.execute(
             'DELETE FROM game_state WHERE session_id NOT IN (SELECT id FROM game_sessions)'
         )
         count = cur.rowcount
         conn.commit()
         conn.close()
-        log.info('Cleaned up %d sessions older than %d days', count, days)
+        if count:
+            log.info('Cleaned up %d sessions inactive for more than %s', count, delta)
         return count
     except Exception:
         log.exception('cleanup_old_sessions failed')

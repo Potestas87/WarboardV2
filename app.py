@@ -71,6 +71,8 @@ def lobby():
     if 'username' not in session:
         return redirect(url_for('login'))
     uname = session['username']
+    # Expire sessions inactive for more than 48 hours
+    database.cleanup_old_sessions(hours=48)
     all_sessions = database.get_sessions()
     sessions = [
         s for s in all_sessions

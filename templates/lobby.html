@@ -8,6 +8,7 @@
   <header class="lobby-header">
     <h1 class="logo">WARBOARD <span>V2</span></h1>
     <div class="lobby-user">
+      <button id="btn-about" class="btn btn-ghost btn-sm">About</button>
       <span class="tag">{{ username }}</span>
       <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm">Logout</a>
     </div>
@@ -106,11 +107,89 @@
 
 </div>
 
+<!-- ── About modal ─────────────────────────────────────────────────────────── -->
+<div id="about-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 id="about-title" class="modal-title">About Warboard V2</h2>
+      <button id="about-close" class="modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+
+      <section class="about-section">
+        <h3>What is Warboard V2?</h3>
+        <p>
+          Warboard V2 is a <strong>free online tabletop war game simulator</strong> built to let
+          friends and family play miniature wargames together remotely — no downloads, no
+          subscription, no setup required. Create a session, share the link, and battle across
+          a fully scaled 72&Prime;&nbsp;&times;&nbsp;48&Prime; virtual board from anywhere in the world.
+        </p>
+      </section>
+
+      <section class="about-section">
+        <h3>How to Play</h3>
+        <ol class="about-steps">
+          <li><strong>Create a session</strong> from the lobby. Choose Open or Password-locked.</li>
+          <li><strong>Share the session</strong> with your opponent so they can join.</li>
+          <li>During the <strong>Setup phase</strong>, Player 1 can place terrain blocks.
+              Both players add their units using the sidebar.</li>
+          <li>When ready, <strong>Player 1 clicks Start Game</strong>. Terrain locks and the
+              active phase begins.</li>
+          <li>Players <strong>alternate turns</strong> by clicking End Turn. Move your units,
+              roll dice, and track HP during your turn.</li>
+          <li>Use the <strong>Measure tool</strong> to check range, and watch for
+              <span style="color:var(--accent)">green</span> /
+              <span style="color:var(--danger)">red</span> rings that show line-of-sight
+              to nearby units.</li>
+        </ol>
+      </section>
+
+      <section class="about-section">
+        <h3>Interface Controls</h3>
+        <table class="about-controls">
+          <tbody>
+            <tr><td><kbd>Drag</kbd> empty board</td><td>Pan the camera</td></tr>
+            <tr><td><kbd>Scroll</kbd></td><td>Zoom in / out</td></tr>
+            <tr><td><kbd>Drag</kbd> a unit</td><td>Move it across the board</td></tr>
+            <tr><td><kbd>Right-click</kbd> unit / terrain</td><td>Delete it</td></tr>
+            <tr><td><kbd>+</kbd> / <kbd>−</kbd> on unit</td><td>Adjust HP</td></tr>
+            <tr><td>Measure panel → click unit</td><td>Show range ring &amp; LOS</td></tr>
+            <tr><td>Ping button → click board</td><td>Flash a location marker</td></tr>
+            <tr><td>Speech bubble (bottom-right)</td><td>Open / close chat</td></tr>
+            <tr><td><kbd>Undo</kbd> / <kbd>Redo</kbd></td><td>Step back or forward through your moves</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="about-section about-note">
+        Sessions automatically expire after <strong>48 hours</strong> of inactivity to keep
+        the server clean. Use the Save button in-game to reset the timer.
+      </section>
+
+    </div>
+  </div>
+</div>
+
 <script>
 function togglePasswordField(val) {
   document.getElementById('password-field').classList.toggle('hidden', val !== 'locked');
   const pwInput = document.querySelector('#password-field input');
   pwInput.required = (val === 'locked');
 }
+
+// About modal
+const aboutModal = document.getElementById('about-modal');
+document.getElementById('btn-about').addEventListener('click', () => {
+  aboutModal.classList.remove('hidden');
+});
+document.getElementById('about-close').addEventListener('click', () => {
+  aboutModal.classList.add('hidden');
+});
+aboutModal.addEventListener('click', (e) => {
+  if (e.target === aboutModal) aboutModal.classList.add('hidden');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') aboutModal.classList.add('hidden');
+});
 </script>
 {% endblock %}
