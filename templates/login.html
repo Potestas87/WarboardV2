@@ -17,6 +17,7 @@
     {% endwith %}
 
     <form method="POST" action="{{ url_for('login') }}" class="auth-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <label>Display Name</label>
       <input type="text" name="username" required autocomplete="off"
              placeholder="Enter your name..." maxlength="32" />

@@ -1,8 +1,17 @@
+# eventlet monkey-patch must be the very first thing imported so that all
+# standard-library blocking calls are replaced before Flask/SocketIO load.
+try:
+    import eventlet
+    eventlet.monkey_patch()
+except ImportError:
+    pass  # falls back to Werkzeug dev server when eventlet is not installed
+
 import os
 import random
 import logging
 from flask import Flask, render_template, request, session, redirect, url_for, flash
 from flask_socketio import SocketIO, emit, join_room, disconnect
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 import db as database
 
@@ -16,11 +25,18 @@ log = logging.getLogger('warboard')
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'warboard-dev-key-change-in-prod')
 
+# ── CSRF protection ────────────────────────────────────────────────────────────
+csrf = CSRFProtect(app)
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _raw_origins = os.environ.get('CORS_ORIGINS', 'http://localhost:5001')
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(',') if o.strip()]
 
 socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS)
+
+# ── Database init (runs at import time so gunicorn initialises the DB) ─────────
+with app.app_context():
+    database.init_db()
 
 # Physical board dimensions in millimetres (72 × 48 inches)
 BOARD_W_MM = 72 * 25.4   # 1828.8 mm
@@ -591,7 +607,6 @@ def admin_cleanup():
 
 
 if __name__ == '__main__':
-    database.init_db()
     port       = int(os.environ.get('PORT', 5001))
     debug_mode = os.environ.get('DEBUG', 'true').lower() == 'true'
     socketio.run(app, debug=debug_mode, port=port,

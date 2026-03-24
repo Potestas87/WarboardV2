@@ -21,6 +21,7 @@
     </p>
 
     <form method="POST" class="auth-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <label>Session Password</label>
       <input type="password" name="password" required autocomplete="off"
              placeholder="Enter password..." autofocus />

@@ -1,4 +1,8 @@
 flask
 flask-socketio
+flask-wtf
 simple-websocket
 werkzeug
+psycopg2-binary
+gunicorn
+eventlet
