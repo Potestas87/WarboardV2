@@ -19,6 +19,9 @@ let activeTurn  = null;    // username of the player whose turn it is
 let moveHistory = [];      // [{circle_id, from_x, from_y, to_x, to_y}] max 10
 let redoStack   = [];      // same shape; cleared on every new move
 
+// ── Connection state ──────────────────────────────────────────────────────────
+let isConnected = false;
+
 // ── Interaction state ─────────────────────────────────────────────────────────
 let dragCircle   = null;
 let dragOffX     = 0;
@@ -67,8 +70,28 @@ const turnIndicator = document.getElementById('turn-indicator');
 const socket = io();
 
 socket.on('connect', () => {
+  isConnected = true;
+  updateConnStatus(true);
   socket.emit('join', { session_id: SESSION_ID });
 });
+
+socket.on('disconnect', () => {
+  isConnected = false;
+  updateConnStatus(false);
+});
+
+socket.on('connect_error', () => {
+  isConnected = false;
+  updateConnStatus(false);
+});
+
+function updateConnStatus(connected) {
+  const el = document.getElementById('conn-status');
+  if (!el) return;
+  el.textContent  = connected ? '● Online' : '● Offline';
+  el.style.color  = connected ? 'var(--accent)' : 'var(--danger)';
+  el.title        = connected ? 'Connected' : 'Disconnected — trying to reconnect…';
+}
 
 socket.on('state_sync', (state) => {
   circles    = state.circles || [];
@@ -132,6 +155,26 @@ socket.on('game_started', () => {
   render();
 });
 
+socket.on('game_reset', (state) => {
+  circles    = state.circles    || [];
+  squares    = state.squares    || [];
+  gamePhase  = state.phase      || 'setup';
+  activeTurn = state.active_turn || null;
+  moveHistory = [];
+  redoStack   = [];
+  updateTurnUI();
+  updatePhaseUI();
+  render();
+});
+
+socket.on('player_joined', (data) => {
+  showFlash(`${escapeHtml(data.username)} joined the game.`, 'accent');
+});
+
+socket.on('player_left', (data) => {
+  if (data && data.username) showFlash(`${escapeHtml(data.username)} disconnected.`, 'muted');
+});
+
 socket.on('ping_received', (data) => { createPing(data.x_mm, data.y_mm); });
 
 socket.on('dice_result', showDiceResults);
@@ -180,6 +223,10 @@ function updatePhaseUI() {
   const btnStart = document.getElementById('btn-start-game');
   if (btnStart) btnStart.classList.toggle('hidden', !isSetup || USERNAME !== PLAYER1_NAME);
 
+  // Reset button — only player1, always visible when they are in the game
+  const btnRst = document.getElementById('btn-reset-game');
+  if (btnRst) btnRst.classList.toggle('hidden', USERNAME !== PLAYER1_NAME);
+
   // Phase badge
   const badge = document.getElementById('phase-indicator');
   if (badge) {
@@ -189,9 +236,8 @@ function updatePhaseUI() {
 }
 
 // ── Undo / Redo ───────────────────────────────────────────────────────────────
-// TODO: remove Guest bypass before production
-function canUndo() { return (isMyTurn() || USERNAME === 'Guest') && moveHistory.length > 0; }
-function canRedo() { return (isMyTurn() || USERNAME === 'Guest') && redoStack.length > 0; }
+function canUndo() { return isMyTurn() && moveHistory.length > 0; }
+function canRedo() { return isMyTurn() && redoStack.length > 0; }
 
 function updateUndoRedoButtons() {
   btnUndo.disabled = !canUndo();
@@ -711,9 +757,7 @@ canvas.addEventListener('mouseup', () => {
       y_mm:       movedY,
     });
 
-    // TODO: remove Guest bypass before production
-    const eligibleToRecord = (isMyTurn() || USERNAME === 'Guest') &&
-                             (dragCircle.created_by === USERNAME || USERNAME === 'Guest');
+    const eligibleToRecord = isMyTurn() && dragCircle.created_by === USERNAME;
     if (didMove && eligibleToRecord) {
       recordMove(dragCircle.id, dragStartX, dragStartY, movedX, movedY);
     }
@@ -745,10 +789,8 @@ canvas.addEventListener('mouseleave', () => {
       x_mm:       dragCircle.x_mm,
       y_mm:       dragCircle.y_mm,
     });
-    // TODO: remove Guest bypass before production
-    const didMove2 = dragCircle.x_mm !== dragStartX || dragCircle.y_mm !== dragStartY;
-    const eligible2 = (isMyTurn() || USERNAME === 'Guest') &&
-                      (dragCircle.created_by === USERNAME || USERNAME === 'Guest');
+    const didMove2  = dragCircle.x_mm !== dragStartX || dragCircle.y_mm !== dragStartY;
+    const eligible2 = isMyTurn() && dragCircle.created_by === USERNAME;
     if (didMove2 && eligible2) {
       recordMove(dragCircle.id, dragStartX, dragStartY, dragCircle.x_mm, dragCircle.y_mm);
     }
@@ -938,6 +980,16 @@ document.getElementById('btn-start-game').addEventListener('click', () => {
   socket.emit('start_game', { session_id: SESSION_ID });
 });
 
+// ── Reset Game ────────────────────────────────────────────────────────────────
+const btnReset = document.getElementById('btn-reset-game');
+if (btnReset) {
+  btnReset.addEventListener('click', () => {
+    if (USERNAME !== PLAYER1_NAME) return;
+    if (!confirm('Reset the board? This will clear all pieces and terrain.')) return;
+    socket.emit('reset_game', { session_id: SESSION_ID });
+  });
+}
+
 // ── Ping button ───────────────────────────────────────────────────────────────
 document.getElementById('btn-ping').addEventListener('click', () => {
   pingMode = !pingMode;
@@ -974,7 +1026,7 @@ chatInput.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   const msg = chatInput.value.trim();
   if (!msg) return;
-  socket.emit('chat_message', { session_id: SESSION_ID, username: USERNAME, message: msg });
+  socket.emit('chat_message', { session_id: SESSION_ID, message: msg });
   chatInput.value = '';
 });
 
@@ -986,6 +1038,17 @@ socket.on('chat_received', (data) => {
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── Flash notification (bottom centre) ───────────────────────────────────────
+function showFlash(html, type = 'muted') {
+  const el = document.createElement('div');
+  el.className  = 'flash flash-bottom';
+  el.style.color       = type === 'accent' ? 'var(--accent)' : 'var(--muted)';
+  el.style.borderColor = type === 'accent' ? 'var(--accent)' : 'var(--border)';
+  el.innerHTML  = html;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
 }
 
 function appendChatMessage(username, message) {
