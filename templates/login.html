@@ -14,16 +14,10 @@
     {% endwith %}
 
     <form method="POST" action="{{ url_for('login') }}" class="auth-form">
-      <label>Username</label>
-      <input type="text" name="username" required autocomplete="username" />
-
-      <label>Password</label>
-      <input type="password" name="password" required autocomplete="current-password" />
-
-      <div class="btn-row">
-        <button type="submit" name="action" value="login" class="btn btn-primary">Login</button>
-        <button type="submit" name="action" value="register" class="btn btn-ghost">Register</button>
-      </div>
+      <label>Display Name</label>
+      <input type="text" name="username" required autocomplete="off"
+             placeholder="Enter your name..." maxlength="32" />
+      <button type="submit" class="btn btn-primary w-full">Enter</button>
     </form>
 
     <div class="divider">or</div>

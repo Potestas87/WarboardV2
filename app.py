@@ -17,7 +17,7 @@ BOARD_H_MM = 48 * 25.4   # 1219.2 mm
 
 @app.route('/')
 def index():
-    if 'user_id' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
     return redirect(url_for('lobby'))
 
@@ -25,38 +25,18 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        action   = request.form.get('action')
         username = request.form.get('username', '').strip()
-        password = request.form.get('password', '').strip()
-
-        if action == 'register':
-            if database.create_user(username, password):
-                user = database.get_user(username)
-                session['user_id']  = user['id']
-                session['username'] = user['username']
-                return redirect(url_for('lobby'))
-            flash('Username already taken.')
-
-        elif action == 'login':
-            user = database.get_user(username)
-            if user and database.verify_password(user['password'], password):
-                session['user_id']  = user['id']
-                session['username'] = user['username']
-                return redirect(url_for('lobby'))
-            flash('Invalid username or password.')
-
+        if username:
+            session['username'] = username
+            return redirect(url_for('lobby'))
+        flash('Please enter a display name.')
     return render_template('login.html')
 
 
 @app.route('/guest_login')
 def guest_login():
     """One-click login for local testing — no credentials required."""
-    username = 'Guest'
-    if not database.get_user(username):
-        database.create_user(username, 'guest')
-    user = database.get_user(username)
-    session['user_id']  = user['id']
-    session['username'] = user['username']
+    session['username'] = 'Guest'
     return redirect(url_for('lobby'))
 
 
@@ -70,7 +50,7 @@ def logout():
 
 @app.route('/lobby')
 def lobby():
-    if 'user_id' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
     sessions = database.get_sessions()
     return render_template('lobby.html', sessions=sessions, username=session['username'])
@@ -78,16 +58,16 @@ def lobby():
 
 @app.route('/create_session', methods=['POST'])
 def create_session_route():
-    if 'user_id' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
     name    = request.form.get('name', 'New Game').strip() or 'New Game'
-    sess_id = database.create_session(name, session['user_id'])
+    sess_id = database.create_session(name, session['username'])
     return redirect(url_for('game', session_id=sess_id))
 
 
 @app.route('/join_session/<session_id>')
 def join_session(session_id):
-    if 'user_id' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
 
     gs = database.get_session(session_id)
@@ -95,14 +75,14 @@ def join_session(session_id):
         flash('Session not found.')
         return redirect(url_for('lobby'))
 
-    uid = session['user_id']
+    uname = session['username']
     # Already in session
-    if gs['player1_id'] == uid or gs['player2_id'] == uid:
+    if gs['player1_name'] == uname or gs['player2_name'] == uname:
         return redirect(url_for('game', session_id=session_id))
 
     # Join as player 2 if slot is open
-    if gs['player2_id'] is None:
-        database.add_player_to_session(session_id, uid)
+    if gs['player2_name'] is None:
+        database.add_player_to_session(session_id, uname)
         return redirect(url_for('game', session_id=session_id))
 
     flash('Session is full (2 players max).')
@@ -113,7 +93,7 @@ def join_session(session_id):
 
 @app.route('/game/<session_id>')
 def game(session_id):
-    if 'user_id' not in session:
+    if 'username' not in session:
         return redirect(url_for('login'))
 
     gs = database.get_session(session_id)
@@ -121,8 +101,8 @@ def game(session_id):
         flash('Session not found.')
         return redirect(url_for('lobby'))
 
-    uid = session['user_id']
-    if gs['player1_id'] != uid and gs['player2_id'] != uid:
+    uname = session['username']
+    if gs['player1_name'] != uname and gs['player2_name'] != uname:
         flash('You are not part of this session.')
         return redirect(url_for('lobby'))
 
