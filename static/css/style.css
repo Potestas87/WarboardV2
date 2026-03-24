@@ -154,6 +154,23 @@ label { display: block; color: var(--muted); font-size: 0.78rem;
 .player-tag.p2 { color: var(--p2); border-color: var(--p2); }
 .vs { color: var(--muted); font-size: 0.75rem; }
 
+.player-tag.active-turn {
+  box-shadow: 0 0 0 2px currentColor;
+  opacity: 1;
+}
+.player-tag:not(.active-turn) { opacity: 0.45; }
+
+.turn-indicator {
+  font-size: 0.78rem; padding: 2px 8px;
+  border-radius: var(--radius); white-space: nowrap;
+}
+.turn-indicator.my-turn    { color: var(--accent); border: 1px solid var(--accent); }
+.turn-indicator.their-turn { color: var(--muted);  border: 1px solid var(--border); }
+
+.btn:disabled {
+  opacity: 0.35; cursor: not-allowed; pointer-events: none;
+}
+
 .game-body { display: flex; flex: 1; overflow: hidden; }
 
 /* ── Sidebar ────────────────────────────────────────────────────────────────── */

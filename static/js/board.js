@@ -1,41 +1,52 @@
 'use strict';
 
 // ── Constants (injected from game.html) ───────────────────────────────────────
-// SESSION_ID, USERNAME, BOARD_W_MM, BOARD_H_MM are globals from the template.
+// SESSION_ID, USERNAME, BOARD_W_MM, BOARD_H_MM, PLAYER1_NAME, PLAYER2_NAME
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let circles   = [];   // [{id, x_mm, y_mm, radius_mm, title, color, hp?}, ...]
+// ── Board state ───────────────────────────────────────────────────────────────
+let circles   = [];
 let zoom      = 1.0;
 let panX      = 0;
 let panY      = 0;
-let baseScale = 1;    // px-per-mm at zoom=1
+let baseScale = 1;
 
 let selectedColor = '#e94560';
 
-// Interaction state
+// ── Turn & history ────────────────────────────────────────────────────────────
+let activeTurn  = null;    // username of the player whose turn it is
+let moveHistory = [];      // [{circle_id, from_x, from_y, to_x, to_y}] max 10
+let redoStack   = [];      // same shape; cleared on every new move
+
+// ── Interaction state ─────────────────────────────────────────────────────────
 let dragCircle   = null;
 let dragOffX     = 0;
 let dragOffY     = 0;
+let dragStartX   = 0;      // circle position at the moment of mousedown
+let dragStartY   = 0;
 let isPanning    = false;
 let panStartX    = 0;
 let panStartY    = 0;
 let panStartPanX = 0;
 let panStartPanY = 0;
 
+// ── Measure tool ──────────────────────────────────────────────────────────────
+let selectedCircle = null;
+let measureOriginX = 0;
+let measureOriginY = 0;
+
 let ctxMenuCircle = null;
 
-// Measure tool state
-let selectedCircle  = null;   // circle actively held (mousedown)
-let measureOriginX  = 0;      // board-mm position at the moment of selection
-let measureOriginY  = 0;
-
 // ── DOM refs ──────────────────────────────────────────────────────────────────
-const canvas     = document.getElementById('board-canvas');
-const ctx        = canvas.getContext('2d');
-const zoomLabel  = document.getElementById('zoom-label');
-const ctxMenu    = document.getElementById('ctx-menu');
-const ctxDelete  = document.getElementById('ctx-delete');
-const saveStatus = document.getElementById('save-status');
+const canvas        = document.getElementById('board-canvas');
+const ctx           = canvas.getContext('2d');
+const zoomLabel     = document.getElementById('zoom-label');
+const ctxMenu       = document.getElementById('ctx-menu');
+const ctxDelete     = document.getElementById('ctx-delete');
+const saveStatus    = document.getElementById('save-status');
+const btnUndo       = document.getElementById('btn-undo');
+const btnRedo       = document.getElementById('btn-redo');
+const btnEndTurn    = document.getElementById('btn-end-turn');
+const turnIndicator = document.getElementById('turn-indicator');
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
 const socket = io();
@@ -45,7 +56,9 @@ socket.on('connect', () => {
 });
 
 socket.on('state_sync', (state) => {
-  circles = state.circles || [];
+  circles    = state.circles || [];
+  activeTurn = state.active_turn || null;
+  updateTurnUI();
   render();
 });
 
@@ -71,13 +84,93 @@ socket.on('hp_updated', (data) => {
   render();
 });
 
-socket.on('dice_result', (data) => {
-  showDiceResults(data);
+socket.on('turn_changed', (data) => {
+  activeTurn  = data.active_turn;
+  moveHistory = [];
+  redoStack   = [];
+  updateTurnUI();
+  render();
 });
+
+socket.on('dice_result', showDiceResults);
 
 socket.on('state_saved', (data) => {
   saveStatus.textContent = data.message;
   setTimeout(() => { saveStatus.textContent = ''; }, 3000);
+});
+
+// ── Turn UI ───────────────────────────────────────────────────────────────────
+function isMyTurn() { return activeTurn === USERNAME; }
+
+function updateTurnUI() {
+  // Player tag active highlight
+  const p1Tag = document.getElementById('tag-p1');
+  const p2Tag = document.getElementById('tag-p2');
+  p1Tag.classList.toggle('active-turn', activeTurn === PLAYER1_NAME);
+  p2Tag.classList.toggle('active-turn', activeTurn === PLAYER2_NAME);
+
+  // Turn indicator text
+  if (!activeTurn) {
+    turnIndicator.textContent = '';
+  } else if (isMyTurn()) {
+    turnIndicator.textContent = 'Your Turn';
+    turnIndicator.className   = 'turn-indicator my-turn';
+  } else {
+    turnIndicator.textContent = `${activeTurn}'s Turn`;
+    turnIndicator.className   = 'turn-indicator their-turn';
+  }
+
+  // End Turn button — only enabled on your turn and only when player2 exists
+  btnEndTurn.disabled = !isMyTurn() || !PLAYER2_NAME;
+
+  updateUndoRedoButtons();
+}
+
+// ── Undo / Redo ───────────────────────────────────────────────────────────────
+// TODO: remove Guest bypass before production
+function canUndo() { return (isMyTurn() || USERNAME === 'Guest') && moveHistory.length > 0; }
+function canRedo() { return (isMyTurn() || USERNAME === 'Guest') && redoStack.length > 0; }
+
+function updateUndoRedoButtons() {
+  btnUndo.disabled = !canUndo();
+  btnRedo.disabled = !canRedo();
+}
+
+function recordMove(circle_id, from_x, from_y, to_x, to_y) {
+  moveHistory.push({ circle_id, from_x, from_y, to_x, to_y });
+  if (moveHistory.length > 10) moveHistory.shift();
+  redoStack = [];   // new move always clears redo
+  updateUndoRedoButtons();
+}
+
+function applyMove(circle_id, x_mm, y_mm) {
+  const c = circles.find(c => c.id === circle_id);
+  if (!c) return;
+  c.x_mm = x_mm;
+  c.y_mm = y_mm;
+  socket.emit('move_circle', { session_id: SESSION_ID, circle_id, x_mm, y_mm });
+  render();
+}
+
+btnUndo.addEventListener('click', () => {
+  if (!canUndo()) return;
+  const move = moveHistory.pop();
+  redoStack.push(move);
+  applyMove(move.circle_id, move.from_x, move.from_y);
+  updateUndoRedoButtons();
+});
+
+btnRedo.addEventListener('click', () => {
+  if (!canRedo()) return;
+  const move = redoStack.pop();
+  moveHistory.push(move);
+  applyMove(move.circle_id, move.to_x, move.to_y);
+  updateUndoRedoButtons();
+});
+
+btnEndTurn.addEventListener('click', () => {
+  if (!isMyTurn()) return;
+  socket.emit('end_turn', { session_id: SESSION_ID });
 });
 
 // ── Canvas resize & init ──────────────────────────────────────────────────────
@@ -90,18 +183,12 @@ function resizeCanvas() {
 }
 
 function recalcBaseScale() {
-  // Fit the whole board into the canvas at zoom=1 (letterbox / pillarbox)
-  const scaleX = canvas.width  / BOARD_W_MM;
-  const scaleY = canvas.height / BOARD_H_MM;
-  baseScale = Math.min(scaleX, scaleY);
+  baseScale = Math.min(canvas.width / BOARD_W_MM, canvas.height / BOARD_H_MM);
 }
 
 function initPan() {
-  // Centre the board in the canvas at zoom=1
-  const boardPxW = BOARD_W_MM * baseScale * zoom;
-  const boardPxH = BOARD_H_MM * baseScale * zoom;
-  panX = (canvas.width  - boardPxW) / 2;
-  panY = (canvas.height - boardPxH) / 2;
+  panX = (canvas.width  - BOARD_W_MM * baseScale * zoom) / 2;
+  panY = (canvas.height - BOARD_H_MM * baseScale * zoom) / 2;
 }
 
 // ── Coordinate helpers ────────────────────────────────────────────────────────
@@ -115,17 +202,15 @@ function canvasToMm(px, py) {
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
   ctx.fillStyle = '#0d1117';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
   ctx.translate(panX, panY);
   ctx.scale(totalScale(), totalScale());
-  // 1 canvas unit = 1 mm from here on
 
   drawBoard();
-  drawMeasureRing();        // drawn before circles so it sits beneath them
+  drawMeasureRing();
   circles.forEach(drawCircle);
 
   ctx.restore();
@@ -135,7 +220,6 @@ function drawBoard() {
   ctx.fillStyle = '#1a2e22';
   ctx.fillRect(0, 0, BOARD_W_MM, BOARD_H_MM);
 
-  // Minor grid — every inch (25.4 mm)
   ctx.strokeStyle = 'rgba(255,255,255,0.04)';
   ctx.lineWidth = 0.25;
   for (let x = 0; x <= BOARD_W_MM; x += 25.4) {
@@ -145,7 +229,6 @@ function drawBoard() {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(BOARD_W_MM, y); ctx.stroke();
   }
 
-  // Major grid — every 6 inches (152.4 mm)
   ctx.strokeStyle = 'rgba(255,255,255,0.10)';
   ctx.lineWidth = 0.5;
   for (let x = 0; x <= BOARD_W_MM; x += 152.4) {
@@ -155,21 +238,15 @@ function drawBoard() {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(BOARD_W_MM, y); ctx.stroke();
   }
 
-  // Ruler marks along edges
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.font = '6px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  for (let i = 6; i < 72; i += 6) {
-    ctx.fillText(i + '"', i * 25.4, 2);
-  }
+  for (let i = 6; i < 72; i += 6) ctx.fillText(i + '"', i * 25.4, 2);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  for (let i = 6; i < 48; i += 6) {
-    ctx.fillText(i + '"', 2, i * 25.4);
-  }
+  for (let i = 6; i < 48; i += 6) ctx.fillText(i + '"', 2, i * 25.4);
 
-  // Board border
   ctx.strokeStyle = '#3a7a55';
   ctx.lineWidth = 2;
   ctx.strokeRect(0, 0, BOARD_W_MM, BOARD_H_MM);
@@ -182,18 +259,15 @@ function drawCircle(c) {
   ctx.save();
   ctx.translate(x_mm, y_mm);
 
-  // Fill
   ctx.beginPath();
   ctx.arc(0, 0, radius_mm, 0, Math.PI * 2);
   ctx.fillStyle = color + '55';
   ctx.fill();
 
-  // Outer ring
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(radius_mm * 0.04, 0.5);
   ctx.stroke();
 
-  // Clip all text/buttons to just inside the ring
   ctx.beginPath();
   ctx.arc(0, 0, radius_mm * 0.9, 0, Math.PI * 2);
   ctx.clip();
@@ -203,47 +277,36 @@ function drawCircle(c) {
   ctx.textBaseline = 'middle';
 
   if (hasHP) {
-    // Title — smaller, sits in upper area
     const titleSize = Math.max(radius_mm * 0.22, 2.5);
     ctx.font = `${titleSize}px monospace`;
     ctx.fillText(title, 0, -radius_mm * 0.28, radius_mm * 1.7);
 
-    // HP number — large, centre
     const hpSize = Math.max(radius_mm * 0.32, 3.5);
     ctx.font = `bold ${hpSize}px monospace`;
     ctx.fillText(String(c.hp), 0, radius_mm * 0.12);
 
-    // Button constants (local coords)
     const btnR  = radius_mm * 0.17;
     const btnY  = radius_mm * 0.60;
     const btnX  = radius_mm * 0.33;
     const btnFS = Math.max(btnR * 1.5, 2);
 
-    // [−] button
     ctx.beginPath();
     ctx.arc(-btnX, btnY, btnR, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(radius_mm * 0.025, 0.25);
-    ctx.stroke();
+    ctx.lineWidth = Math.max(radius_mm * 0.025, 0.25); ctx.stroke();
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold ${btnFS}px monospace`;
     ctx.fillText('−', -btnX, btnY);
 
-    // [+] button
     ctx.beginPath();
     ctx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(radius_mm * 0.025, 0.25);
-    ctx.stroke();
+    ctx.lineWidth = Math.max(radius_mm * 0.025, 0.25); ctx.stroke();
     ctx.fillStyle = '#ffffff';
     ctx.fillText('+', btnX, btnY);
-
   } else {
-    // No HP — just title centred
     const fontSize = Math.max(radius_mm * 0.28, 3);
     ctx.font = `${fontSize}px monospace`;
     ctx.fillText(title, 0, 0, radius_mm * 1.7);
@@ -262,29 +325,26 @@ function drawMeasureRing() {
   const inches = getMeasureInches();
   if (inches <= 0) return;
 
-  const radius_mm = inches * 25.4;   // inches as radius → radius in mm
+  const radius_mm = inches * 25.4;
 
   ctx.save();
   ctx.translate(measureOriginX, measureOriginY);
 
-  // Transparent filled area
   ctx.beginPath();
   ctx.arc(0, 0, radius_mm, 0, Math.PI * 2);
   ctx.fillStyle = selectedCircle.color + '20';
   ctx.fill();
 
-  // Dashed border
   ctx.strokeStyle = selectedCircle.color + 'aa';
   ctx.lineWidth   = Math.max(radius_mm * 0.008, 0.4);
   ctx.setLineDash([radius_mm * 0.025, radius_mm * 0.015]);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Inch label at the right edge of the ring
   const labelSize = Math.max(radius_mm * 0.04, 3);
-  ctx.font        = `${labelSize}px monospace`;
-  ctx.fillStyle   = selectedCircle.color + 'cc';
-  ctx.textAlign   = 'left';
+  ctx.font         = `${labelSize}px monospace`;
+  ctx.fillStyle    = selectedCircle.color + 'cc';
+  ctx.textAlign    = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${inches}"`, radius_mm + labelSize * 0.3, 0);
 
@@ -303,42 +363,23 @@ function zoomAt(px, py, factor) {
 }
 
 // ── Hit tests ─────────────────────────────────────────────────────────────────
-
-// Returns the topmost circle under a board-mm point, or null.
 function circleAt(mm_x, mm_y) {
   for (let i = circles.length - 1; i >= 0; i--) {
-    const c  = circles[i];
-    const dx = mm_x - c.x_mm;
-    const dy = mm_y - c.y_mm;
+    const c = circles[i];
+    const dx = mm_x - c.x_mm, dy = mm_y - c.y_mm;
     if (dx * dx + dy * dy <= c.radius_mm * c.radius_mm) return c;
   }
   return null;
 }
 
-// Returns {circle, action:'plus'|'minus'} if an HP button is hit, or null.
-// Must match the button positions in drawCircle exactly.
 function hpButtonAt(mm_x, mm_y) {
   for (let i = circles.length - 1; i >= 0; i--) {
     const c = circles[i];
     if (c.hp === undefined) continue;
-
-    const r    = c.radius_mm;
-    const btnR = r * 0.17;
-    const btnY = r * 0.60;
-    const btnX = r * 0.33;
-
-    // Translate click to circle-local coords
-    const dx = mm_x - c.x_mm;
-    const dy = mm_y - c.y_mm;
-
-    // [−] at local (-btnX, btnY)
-    if ((dx + btnX) ** 2 + (dy - btnY) ** 2 <= btnR ** 2) {
-      return { circle: c, action: 'minus' };
-    }
-    // [+] at local (+btnX, btnY)
-    if ((dx - btnX) ** 2 + (dy - btnY) ** 2 <= btnR ** 2) {
-      return { circle: c, action: 'plus' };
-    }
+    const r = c.radius_mm, btnR = r * 0.17, btnY = r * 0.60, btnX = r * 0.33;
+    const dx = mm_x - c.x_mm, dy = mm_y - c.y_mm;
+    if ((dx + btnX) ** 2 + (dy - btnY) ** 2 <= btnR ** 2) return { circle: c, action: 'minus' };
+    if ((dx - btnX) ** 2 + (dy - btnY) ** 2 <= btnR ** 2) return { circle: c, action: 'plus' };
   }
   return null;
 }
@@ -349,11 +390,9 @@ canvas.addEventListener('mousedown', (e) => {
   hideCtxMenu();
 
   const rect = canvas.getBoundingClientRect();
-  const px   = e.clientX - rect.left;
-  const py   = e.clientY - rect.top;
-  const mm   = canvasToMm(px, py);
+  const mm   = canvasToMm(e.clientX - rect.left, e.clientY - rect.top);
 
-  // HP buttons take priority over drag
+  // HP buttons take priority
   const btn = hpButtonAt(mm.x, mm.y);
   if (btn) {
     const { circle, action } = btn;
@@ -368,14 +407,15 @@ canvas.addEventListener('mousedown', (e) => {
     dragCircle     = hit;
     dragOffX       = mm.x - hit.x_mm;
     dragOffY       = mm.y - hit.y_mm;
-    // Capture selection origin for measure ring — frozen at this position
+    dragStartX     = hit.x_mm;      // snapshot for undo
+    dragStartY     = hit.y_mm;
     selectedCircle = hit;
     measureOriginX = hit.x_mm;
     measureOriginY = hit.y_mm;
     canvas.style.cursor = 'grabbing';
-    render();   // show ring immediately on mousedown, before any movement
+    render();
   } else {
-    selectedCircle = null;   // clicking empty space clears selection
+    selectedCircle = null;
     isPanning    = true;
     panStartX    = e.clientX;
     panStartY    = e.clientY;
@@ -387,11 +427,9 @@ canvas.addEventListener('mousedown', (e) => {
 
 canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
-  const px   = e.clientX - rect.left;
-  const py   = e.clientY - rect.top;
+  const mm   = canvasToMm(e.clientX - rect.left, e.clientY - rect.top);
 
   if (dragCircle) {
-    const mm = canvasToMm(px, py);
     dragCircle.x_mm = Math.max(dragCircle.radius_mm,
                        Math.min(BOARD_W_MM - dragCircle.radius_mm, mm.x - dragOffX));
     dragCircle.y_mm = Math.max(dragCircle.radius_mm,
@@ -406,15 +444,28 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseup', () => {
   if (dragCircle) {
+    const movedX = dragCircle.x_mm, movedY = dragCircle.y_mm;
+    const didMove = movedX !== dragStartX || movedY !== dragStartY;
+
     socket.emit('move_circle', {
       session_id: SESSION_ID,
       circle_id:  dragCircle.id,
-      x_mm:       dragCircle.x_mm,
-      y_mm:       dragCircle.y_mm,
+      x_mm:       movedX,
+      y_mm:       movedY,
     });
+
+    // Record for undo only when it's our turn and we own the circle
+    // TODO: remove Guest bypass before production
+    const eligibleToRecord = (isMyTurn() || USERNAME === 'Guest') &&
+                             (dragCircle.created_by === USERNAME || USERNAME === 'Guest');
+    if (didMove && eligibleToRecord) {
+      recordMove(dragCircle.id, dragStartX, dragStartY, movedX, movedY);
+    }
+
     dragCircle = null;
   }
-  selectedCircle = null;   // release clears measure ring
+
+  selectedCircle = null;
   isPanning = false;
   canvas.style.cursor = 'grab';
   render();
@@ -428,6 +479,14 @@ canvas.addEventListener('mouseleave', () => {
       x_mm:       dragCircle.x_mm,
       y_mm:       dragCircle.y_mm,
     });
+    // Also record move on leave if eligible
+    // TODO: remove Guest bypass before production
+    const didMove2 = dragCircle.x_mm !== dragStartX || dragCircle.y_mm !== dragStartY;
+    const eligible2 = (isMyTurn() || USERNAME === 'Guest') &&
+                      (dragCircle.created_by === USERNAME || USERNAME === 'Guest');
+    if (didMove2 && eligible2) {
+      recordMove(dragCircle.id, dragStartX, dragStartY, dragCircle.x_mm, dragCircle.y_mm);
+    }
     dragCircle = null;
   }
   selectedCircle = null;
@@ -439,21 +498,16 @@ canvas.addEventListener('mouseleave', () => {
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const rect   = canvas.getBoundingClientRect();
-  const px     = e.clientX - rect.left;
-  const py     = e.clientY - rect.top;
   const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-  zoomAt(px, py, factor);
+  zoomAt(e.clientX - rect.left, e.clientY - rect.top, factor);
 }, { passive: false });
 
 // Right-click context menu
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const rect = canvas.getBoundingClientRect();
-  const px   = e.clientX - rect.left;
-  const py   = e.clientY - rect.top;
-  const mm   = canvasToMm(px, py);
+  const mm   = canvasToMm(e.clientX - rect.left, e.clientY - rect.top);
   const hit  = circleAt(mm.x, mm.y);
-
   if (hit) {
     ctxMenuCircle = hit;
     ctxMenu.style.left = e.clientX + 'px';
@@ -474,7 +528,6 @@ ctxDelete.addEventListener('click', () => {
 
 document.addEventListener('click', hideCtxMenu);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtxMenu(); });
-
 function hideCtxMenu() { ctxMenu.classList.add('hidden'); }
 
 // ── Dice roller ───────────────────────────────────────────────────────────────
@@ -487,7 +540,6 @@ function showDiceResults(data) {
   const { counts, total, num_dice } = data;
   const tbody    = document.getElementById('dice-tbody');
   const maxCount = Math.max(...Object.values(counts), 1);
-
   tbody.innerHTML = '';
   for (let face = 1; face <= 6; face++) {
     const count = counts[String(face)] || 0;
@@ -499,7 +551,6 @@ function showDiceResults(data) {
       <td class="bar-cell"><div class="bar-inner" style="width:${pct}%"></div></td>`;
     tbody.appendChild(tr);
   }
-
   document.getElementById('dice-total').textContent =
     `${num_dice} dice · total ${total} · avg ${(total / num_dice).toFixed(1)}`;
   document.getElementById('dice-results').classList.remove('hidden');
@@ -513,13 +564,11 @@ document.getElementById('color-swatches').addEventListener('click', (e) => {
   selectedColor = e.target.dataset.color;
 });
 
-// Show/hide HP input based on checkbox
 document.getElementById('circle-hp-enabled').addEventListener('change', (e) => {
   document.getElementById('circle-hp-row').classList.toggle('hidden', !e.target.checked);
 });
 
 document.getElementById('btn-add-circle').addEventListener('click', () => {
-  // Input is diameter; radius_mm = diameter / 2
   const diameter  = parseFloat(document.getElementById('circle-radius').value) || 40;
   const radius_mm = diameter / 2;
   const title     = document.getElementById('circle-title').value.trim() || 'Unit';
@@ -530,19 +579,17 @@ document.getElementById('btn-add-circle').addEventListener('click', () => {
     : undefined;
 
   const newCircles = [];
-  const spacing    = diameter + 5;   // one diameter + small gap between copies
+  const spacing    = diameter + 5;
 
   for (let i = 0; i < copies; i++) {
-    const x = Math.min(radius_mm + 10 + i * spacing, BOARD_W_MM - radius_mm);
-    const y = radius_mm + 10;
-
     const circle = {
-      id:        crypto.randomUUID(),
-      x_mm:      x,
-      y_mm:      y,
+      id:         crypto.randomUUID(),
+      x_mm:       Math.min(radius_mm + 10 + i * spacing, BOARD_W_MM - radius_mm),
+      y_mm:       radius_mm + 10,
       radius_mm,
-      title:     copies > 1 ? `${title} ${i + 1}` : title,
-      color:     selectedColor,
+      title:      copies > 1 ? `${title} ${i + 1}` : title,
+      color:      selectedColor,
+      created_by: USERNAME,    // ownership for undo eligibility
     };
     if (hpEnabled) circle.hp = hpStart;
     newCircles.push(circle);
@@ -553,13 +600,13 @@ document.getElementById('btn-add-circle').addEventListener('click', () => {
   render();
 });
 
-// ── Measure clear button ──────────────────────────────────────────────────────
+// ── Measure clear ─────────────────────────────────────────────────────────────
 document.getElementById('measure-clear').addEventListener('click', () => {
   document.getElementById('measure-input').value = '';
   render();
 });
 
-// ── Save button ───────────────────────────────────────────────────────────────
+// ── Save ──────────────────────────────────────────────────────────────────────
 document.getElementById('btn-save').addEventListener('click', () => {
   socket.emit('save_state', { session_id: SESSION_ID });
 });
@@ -569,5 +616,5 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 recalcBaseScale();
 initPan();
-zoomLabel.textContent = Math.round(zoom * 100) + '%';
+zoomLabel.textContent = '100%';
 render();

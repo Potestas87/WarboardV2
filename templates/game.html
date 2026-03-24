@@ -11,15 +11,15 @@
       <span class="session-title">{{ game_session.name }}</span>
     </div>
     <div class="topbar-center">
-      <span class="player-tag p1" title="Player 1">
-        {{ game_session.player1_name or '—' }}
-      </span>
+      <span id="tag-p1" class="player-tag p1">{{ game_session.player1_name or '—' }}</span>
       <span class="vs">vs</span>
-      <span class="player-tag p2" title="Player 2">
-        {{ game_session.player2_name or 'waiting…' }}
-      </span>
+      <span id="tag-p2" class="player-tag p2">{{ game_session.player2_name or 'waiting…' }}</span>
+      <span id="turn-indicator" class="turn-indicator"></span>
+      <button id="btn-end-turn" class="btn btn-ghost btn-sm" disabled>End Turn</button>
     </div>
     <div class="topbar-right">
+      <button id="btn-undo" class="btn btn-ghost btn-sm" disabled>&#8629; Undo</button>
+      <button id="btn-redo" class="btn btn-ghost btn-sm" disabled>&#8631; Redo</button>
       <span id="save-status" class="muted"></span>
       <button id="btn-save" class="btn btn-ghost btn-sm">Save</button>
       <span class="tag">{{ username }}</span>
@@ -139,6 +139,8 @@
   const USERNAME     = "{{ username }}";
   const BOARD_W_MM   = {{ board_w_mm }};
   const BOARD_H_MM   = {{ board_h_mm }};
+  const PLAYER1_NAME = "{{ game_session.player1_name or '' }}";
+  const PLAYER2_NAME = "{{ game_session.player2_name or '' }}";
 </script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="{{ url_for('static', filename='js/board.js') }}"></script>

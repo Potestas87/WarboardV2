@@ -142,7 +142,30 @@ def on_join(data):
     sid = data['session_id']
     join_room(sid)
     state = database.get_game_state(sid)
+    # Initialise active_turn to player1 on first join
+    if not state.get('active_turn'):
+        gs = database.get_session(sid)
+        if gs and gs['player1_name']:
+            state['active_turn'] = gs['player1_name']
+            database.save_game_state(sid, state)
     emit('state_sync', state)
+
+
+@socketio.on('end_turn')
+def on_end_turn(data):
+    sid = data['session_id']
+    state = database.get_game_state(sid)
+    gs    = database.get_session(sid)
+    if not gs:
+        return
+    p1 = gs['player1_name']
+    p2 = gs['player2_name']
+    # Toggle between the two players; if p2 doesn't exist yet, stay on p1
+    current = state.get('active_turn')
+    if p2:
+        state['active_turn'] = p2 if current == p1 else p1
+    database.save_game_state(sid, state)
+    emit('turn_changed', {'active_turn': state['active_turn']}, room=sid)
 
 
 @socketio.on('add_circles')
